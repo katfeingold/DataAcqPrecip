@@ -2,7 +2,7 @@
 from datetime import datetime
 from datetime import timedelta
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, simpledialog
 import subprocess, sys, os
 from pathlib import Path
 import tkinter as tk
@@ -11,8 +11,6 @@ nest_asyncio.apply()
 import asyncio
 import aiohttp
 import async_timeout
-#This script requires the pip install of nest_aayncio, asyncio, aoihttp, and async_timeout to run
-
 
 #-------------------------------------------------------------------------------
 # Python script taht downloads the MRMS data and saves it in a destination file (HArdcoded)
@@ -42,7 +40,22 @@ async def main(loop, tmp, destination):
 
 
 if __name__ == '__main__':
+# ------------------------------------------------------------
+# Popup to choose destination for the downloaded GRIB2 files
+# ------------------------------------------------------------
+    root = tk.Tk()
+    root.withdraw()
+    root.wm_attributes('-topmost', 1)
 
+    destination = filedialog.askdirectory(
+        title="Select folder to SAVE downloaded GRIB2 files"
+    )
+    if not destination:
+        print("No destination selected – aborting.", file=sys.stderr)
+        sys.exit(1)
+
+    # Now that we have `destination`, create it if needed:
+    os.makedirs(destination, exist_ok=True)
     start = datetime(2021, 10, 1, 0, 0)
     end = datetime(2021, 10, 2, 0, 0)   
     destination = r"C:\Temp\DataAcquisition\precip"
@@ -93,11 +106,11 @@ if __name__ == '__main__':
 # Finds the current script’s folder location
 script_dir = Path(__file__).resolve().parent
 
-# # Points to GridReader in that folder
-# batch_file = script_dir / "GridReader.cmd"
-# if not batch_file.exists():
-#     print(f"ERROR: Cannot find {batch_file}", file=sys.stderr)
-#     sys.exit(1)
+# Points to GridReader in that folder
+batch_file = script_dir / "GridReader.cmd"
+if not batch_file.exists():
+    print(f"ERROR: Cannot find {batch_file}", file=sys.stderr)
+    sys.exit(1)
 
 # # Need teh arguments for the batch file
 # in_file = r"C:\Temp\DataAcquisition\precip\MultiSensor_QPE_01H_Pass2_00.00_*.grib2.gz"
@@ -168,9 +181,32 @@ if not shape_file:
     print("No shapefile selected – aborting.", file=sys.stderr)
     sys.exit(1)
 
-#--------------------------------------------------------------------
-# Builds & runs GridReader.cmd 
-#--------------------------------------------------------------------
+# --------------------------------------------------------------------
+# Asks the user to input DSS code string
+# --------------------------------------------------------------------
+DSSA = simpledialog.askstring("DSS A", "Enter value for Part A (e.g. SHG):")
+if not DSSA:
+    print("No DSSA entered – aborting.", file=sys.stderr)
+    sys.exit(1)
+
+DSSB = simpledialog.askstring("DSS B", "Enter value for Part B (e.g. MRMS):")
+if not DSSB:
+    print("No DSSB entered – aborting.", file=sys.stderr)
+    sys.exit(1)
+
+DSSC = simpledialog.askstring("DSS C", "Enter value for Part C (e.g. Precip):")
+if not DSSC:
+    print("No DSSC entered – aborting.", file=sys.stderr)
+    sys.exit(1)
+
+DSSD = simpledialog.askstring("DSS F", "Enter value for Part F (e.g. 01H):")
+if not DSSD:
+    print("No DSSD entered – aborting.", file=sys.stderr)
+    sys.exit(1)
+
+# --------------------------------------------------------------------
+# 5) Build and call GridReader.cmd
+# --------------------------------------------------------------------
 script_dir = Path(__file__).resolve().parent
 batch = script_dir / "GridReader.cmd"
 
@@ -179,8 +215,10 @@ cmd_str = (
     f'-inFile "{in_file}" '
     f'-outFile "{out_file}" '
     f'-extentsShapefile "{shape_file}" '
-    f'-dssA SHG -dssB MRMS -dssC Precip -dssF 01H'
+    f'-dssA {DSSA!r} -dssB {DSSB!r} '
+    f'-dssC {DSSC!r} -dssF {DSSD!r}'
 )
 
+print("Running:", cmd_str)    # optional echo
 ret = subprocess.call(cmd_str, shell=True)
-print("Batch exited with", ret)
+print("Batch exited with code", ret)
