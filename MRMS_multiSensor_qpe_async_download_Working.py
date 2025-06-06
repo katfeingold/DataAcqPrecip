@@ -2,7 +2,10 @@
 from datetime import datetime
 from datetime import timedelta
 import subprocess
+#import subprocess allows the user to run the batch file. 
 import os
+import sys
+from pathlib import Path
 import nest_asyncio
 nest_asyncio.apply()
 import asyncio
@@ -36,8 +39,7 @@ async def main(loop, tmp, destination):
 if __name__ == '__main__':
 
     start = datetime(2021, 10, 1, 0, 0)
-    end = datetime(2021, 10, 2, 0, 0)
-    # destination = r"C:\workspace\ririe\HMS\data\precip"
+    end = datetime(2021, 10, 2, 0, 0)   
     destination = r"C:\Temp\DataAcquisition\precip"
     
     
@@ -72,8 +74,38 @@ if __name__ == '__main__':
         results = loop.run_until_complete(main(loop, tmp, destination))
         del loop, results
 
+#--------------------------------------------------------------------------
+# Section runs a Hard Coded batch file location
+#--------------------------------------------------------------------------
+# cmd = r'"C:\RAMwork\Productpulls\DataAcq\DataAcqPrecip\GridReader.cmd" -inFile foo -dir bar'
+# # shell=True allows batch files to run directly
+# retcode = subprocess.call(cmd, shell=True)
+# print("Batch exited with", retcode)
 
-cmd = r'"C:\RAMwork\Productpulls\DataAcq\DataAcqPrecip\GridReader.cmd" -inFile foo -dir bar'
-# shell=True allows batch files to run directly
+#-------------------------------------------------------------------------
+# Section runs batchfile in the same directory as this script
+# -------------------------------------------------------------------------
+# Finds the current script’s folder location
+script_dir = Path(__file__).resolve().parent
+
+# Points to GridReader in that folder
+batch_file = script_dir / "GridReader.cmd"
+if not batch_file.exists():
+    print(f"ERROR: Cannot find {batch_file}", file=sys.stderr)
+    sys.exit(1)
+
+# Need teh arguments for the batch file
+in_file = r"C:\Temp\DataAcquisition\precip\*"
+out_dir = r"C:\Temp\DataAcquisition\precip\New folder"
+
+
+# the cmd line that will run
+cmd = (
+    f'"{batch_file}" '
+    f'-inFile "{in_file}" '
+    f'-dir    "{out_dir}"'
+)
+
+# run it via the shell
 retcode = subprocess.call(cmd, shell=True)
 print("Batch exited with", retcode)
