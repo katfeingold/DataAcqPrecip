@@ -95,15 +95,26 @@ if not batch_file.exists():
     sys.exit(1)
 
 # Need teh arguments for the batch file
-in_file = r"C:\Temp\DataAcquisition\precip\*"
+in_file = r"C:\Temp\DataAcquisition\precip\MultiSensor_QPE_01H_Pass2_00.00_*.grib2.gz"
 out_dir = r"C:\Temp\DataAcquisition\precip\New folder"
+out_file = r"C:\Temp\DataAcquisition\precip\DataOutDss\test.dss" 
+shape_file = r"C:\Users\q0heckaf\OneDrive - US Army Corps of Engineers\Projects\00.Videos\MetVueVideos\Models\HEC_MetVue_Zonal_Editor\Maps\Subbasins_Reprojected.shp" 
+DSSA = r"SHG" 
+DSSB = r"MRMS" 
+DSSC = r"Precip" 
+DSSD = r"01H"
 
 
 # the cmd line that will run
 cmd = (
-    f'"{batch_file}" '
-    f'-inFile "{in_file}" '
-    f'-dir    "{out_dir}"'
+f'"{batch_file}" '
+f'-inFile "{in_file}" '
+f'-outFile "{out_file}" '
+f'-extentsShapefile "{shape_file}" '
+f'-dssA "{DSSA}" '
+f'-dssB "{DSSB}" '
+f'-dssC "{DSSC}" '
+f'-dssF "{DSSD}"'
 )
 
 # run it via the shell

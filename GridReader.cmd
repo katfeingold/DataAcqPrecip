@@ -43,15 +43,24 @@ set main_method=hec/metvue/base/tin/spatialUtil/GridReader
 ::: Setting the arguments for this utility. 
 ::: https://www.hec.usace.army.mil/confluence/cwmsdocs/metum/latest/gridreader-294956929.html - documentation 
 ::: Use -? to refer to the built-in usage help to select from all the available arguments for this utility.
+:: -----------------------------------------------------------------
+:: If the py script passed any arguments, use those as "usage_help"
+:: Otherwise fall back to the built-in defaults below.
+:: -----------------------------------------------------------------
+   IF NOT "%~1"=="" (
+     SET usage_help=%*
+   ) ELSE (
+     :: no arguments on the command line → use defaults
+     set usage_help= ^
+       -inFile "C:\Temp\DataAcquisition\precip\MultiSensor_QPE_01H_Pass2_00.00_*.grib2.gz" ^
+       -outFile "C:\Temp\DataAcquisition\precip\DataOutDss\test.dss" ^
+       -extentsShapefile "C:\Users\q0heckaf\OneDrive - US Army Corps of Engineers\Projects\00.Videos\MetVueVideos\Models\HEC_MetVue_Zonal_Editor\Maps\Subbasins_Reprojected.shp" ^
+       -dssA "SHG" ^
+       -dssB "MRMS" ^
+       -dssC "Precip" ^
+       -dssF "01H"
+   )
 
- set usage_help= ^
- -inFile "C:\Temp\DataAcquisition\precip\MultiSensor_QPE_01H_Pass2_00.00_*.grib2.gz" ^
- -outFile "C:\Temp\DataAcquisition\precip\DataOutDss\test.dss" ^
- -extentsShapefile "C:\Users\q0heckaf\OneDrive - US Army Corps of Engineers\Projects\00.Videos\MetVueVideos\Models\HEC_MetVue_Zonal_Editor\Maps\Subbasins_Reprojected.shp" ^
- -dssA "SHG" ^
- -dssB "MRMS" ^
- -dssC "Precip" ^
- -dssF "01H"
 
 ::: Command-line execution.
 %java% %memory_setting% %gmtTz% %library_path% %class_path% %main_method% !usage_help!
