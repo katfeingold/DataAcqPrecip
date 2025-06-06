@@ -13,6 +13,11 @@ import aiohttp
 import async_timeout
 #This script requires the pip install of nest_aayncio, asyncio, aoihttp, and async_timeout to run
 
+
+#-------------------------------------------------------------------------------
+# Python script taht downloads the MRMS data and saves it in a destination file (HArdcoded)
+# This script comes from the HMS team. 
+#--------------------------------------------------------------------------------
 async def download_coroutine(url, session, destination):
     # Use 'async with' for the asynchronous timeout context manager
     async with async_timeout.timeout(1200):
@@ -75,7 +80,7 @@ if __name__ == '__main__':
         del loop, results
 
 #--------------------------------------------------------------------------
-# Section runs a Hard Coded batch file location
+# Runs a Hard Coded batch file location
 #--------------------------------------------------------------------------
 # cmd = r'"C:\RAMwork\Productpulls\DataAcq\DataAcqPrecip\GridReader.cmd" -inFile foo -dir bar'
 # # shell=True allows batch files to run directly
@@ -83,7 +88,7 @@ if __name__ == '__main__':
 # print("Batch exited with", retcode)
 
 #-------------------------------------------------------------------------
-# Section runs batchfile in the same directory as this script
+# Runs batchfile in the same directory as this script
 # -------------------------------------------------------------------------
 # Finds the current script’s folder location
 script_dir = Path(__file__).resolve().parent
@@ -121,34 +126,61 @@ script_dir = Path(__file__).resolve().parent
 # retcode = subprocess.call(cmd, shell=True)
 # print("Batch exited with", retcode)
 
-# -----------------------------------------------------------------------------------------------
-# pop up and let me pick the Folder your .gz files are in. Will convert ALL files in that folder
-# -----------------------------------------------------------------------------------------------
-
-# pick directory
-root = tk.Tk(); root.withdraw()
+#--------------------------------------------------------------------
+# Set up a single root for all pop-ups
+#--------------------------------------------------------------------
+root = tk.Tk()
+root.withdraw()
 root.wm_attributes('-topmost', 1)
-directory = filedialog.askdirectory(title="Pick folder with GRIB2 files")
+
+#-----------------------------------------------------------------------------------
+#Asks for the input folder/directory it will take all GRIB2 files in that directory
+#-----------------------------------------------------------------------------------
+directory = filedialog.askdirectory(title="Choose folder with GRIB2 files")
 if not directory:
-    print("No folder selected, aborting", file=sys.stderr)
+    print("No folder selected – aborting.", file=sys.stderr)
+    sys.exit(1)
+in_file = os.path.join(
+    directory,
+    "MultiSensor_QPE_01H_Pass2_00.00_*.grib2.gz"
+)
+#--------------------------------------------------------------------
+# ASks for the output DSS filename, can be existing or new
+#--------------------------------------------------------------------
+out_file = filedialog.asksaveasfilename(
+    title="Choose your output DSS file",
+    defaultextension=".dss",
+    filetypes=[("DSS files","*.dss"), ("All files","*.*")]
+)
+if not out_file:
+    print("No output file selected – aborting.", file=sys.stderr)
     sys.exit(1)
 
-# build the wildcard mask
-in_file = os.path.join(
-  directory,
-  "MultiSensor_QPE_01H_Pass2_00.00_*.grib2.gz"
+#--------------------------------------------------------------------
+# ASks for the shapefile user wants for clipping 
+#--------------------------------------------------------------------
+
+shape_file = filedialog.askopenfilename(
+    title="Select your extents shapefile",
+    filetypes=[("Shapefiles","*.shp"), ("All files","*.*")]
+)
+if not shape_file:
+    print("No shapefile selected – aborting.", file=sys.stderr)
+    sys.exit(1)
+
+#--------------------------------------------------------------------
+# Builds & runs GridReader.cmd 
+#--------------------------------------------------------------------
+script_dir = Path(__file__).resolve().parent
+batch = script_dir / "GridReader.cmd"
+
+cmd_str = (
+    f'"{batch}" '
+    f'-inFile "{in_file}" '
+    f'-outFile "{out_file}" '
+    f'-extentsShapefile "{shape_file}" '
+    f'-dssA SHG -dssB MRMS -dssC Precip -dssF 01H'
 )
 
-# now assemble *one* string and shell it,
-# so that Java sees the literal * and expands internally
-script_dir = Path(__file__).parent
-batch = script_dir / "GridReader.cmd"
-cmd_str = (
-  f'"{batch}" '
-  f'-inFile "{in_file}" '
-  f'-outFile "C:\\Temp\\DataAcquisition\\precip\\DataOutDss\\test.dss" '
-  f'-extentsShapefile "C:\\Users\\…\\Subbasins_Reprojected.shp" '
-  f'-dssA SHG -dssB MRMS -dssC Precip -dssF 01H'
-)
 ret = subprocess.call(cmd_str, shell=True)
 print("Batch exited with", ret)
