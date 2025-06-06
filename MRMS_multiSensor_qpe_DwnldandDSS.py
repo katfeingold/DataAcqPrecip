@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
 from datetime import timedelta
-import subprocess
-#import subprocess allows the user to run the batch file. 
-import os
-import sys
+import tkinter as tk
+from tkinter import filedialog
+import subprocess, sys, os
 from pathlib import Path
+import tkinter as tk
 import nest_asyncio
 nest_asyncio.apply()
 import asyncio
@@ -88,35 +88,67 @@ if __name__ == '__main__':
 # Finds the current script’s folder location
 script_dir = Path(__file__).resolve().parent
 
-# Points to GridReader in that folder
-batch_file = script_dir / "GridReader.cmd"
-if not batch_file.exists():
-    print(f"ERROR: Cannot find {batch_file}", file=sys.stderr)
+# # Points to GridReader in that folder
+# batch_file = script_dir / "GridReader.cmd"
+# if not batch_file.exists():
+#     print(f"ERROR: Cannot find {batch_file}", file=sys.stderr)
+#     sys.exit(1)
+
+# # Need teh arguments for the batch file
+# in_file = r"C:\Temp\DataAcquisition\precip\MultiSensor_QPE_01H_Pass2_00.00_*.grib2.gz"
+# out_dir = r"C:\Temp\DataAcquisition\precip\New folder"
+# out_file = r"C:\Temp\DataAcquisition\precip\DataOutDss\test.dss" 
+# shape_file = r"C:\Users\q0heckaf\OneDrive - US Army Corps of Engineers\Projects\00.Videos\MetVueVideos\Models\HEC_MetVue_Zonal_Editor\Maps\Subbasins_Reprojected.shp" 
+# DSSA = r"SHG" 
+# DSSB = r"MRMS" 
+# DSSC = r"Precip" 
+# DSSD = r"01H"
+
+
+# # the cmd line that will run
+# cmd = (
+# f'"{batch_file}" '
+# f'-inFile "{in_file}" '
+# f'-outFile "{out_file}" '
+# f'-extentsShapefile "{shape_file}" '
+# f'-dssA "{DSSA}" '
+# f'-dssB "{DSSB}" '
+# f'-dssC "{DSSC}" '
+# f'-dssF "{DSSD}"'
+# )
+
+# # run it via the shell
+# retcode = subprocess.call(cmd, shell=True)
+# print("Batch exited with", retcode)
+
+# -----------------------------------------------------------------------------------------------
+# pop up and let me pick the Folder your .gz files are in. Will convert ALL files in that folder
+# -----------------------------------------------------------------------------------------------
+
+# pick directory
+root = tk.Tk(); root.withdraw()
+root.wm_attributes('-topmost', 1)
+directory = filedialog.askdirectory(title="Pick folder with GRIB2 files")
+if not directory:
+    print("No folder selected, aborting", file=sys.stderr)
     sys.exit(1)
 
-# Need teh arguments for the batch file
-in_file = r"C:\Temp\DataAcquisition\precip\MultiSensor_QPE_01H_Pass2_00.00_*.grib2.gz"
-out_dir = r"C:\Temp\DataAcquisition\precip\New folder"
-out_file = r"C:\Temp\DataAcquisition\precip\DataOutDss\test.dss" 
-shape_file = r"C:\Users\q0heckaf\OneDrive - US Army Corps of Engineers\Projects\00.Videos\MetVueVideos\Models\HEC_MetVue_Zonal_Editor\Maps\Subbasins_Reprojected.shp" 
-DSSA = r"SHG" 
-DSSB = r"MRMS" 
-DSSC = r"Precip" 
-DSSD = r"01H"
-
-
-# the cmd line that will run
-cmd = (
-f'"{batch_file}" '
-f'-inFile "{in_file}" '
-f'-outFile "{out_file}" '
-f'-extentsShapefile "{shape_file}" '
-f'-dssA "{DSSA}" '
-f'-dssB "{DSSB}" '
-f'-dssC "{DSSC}" '
-f'-dssF "{DSSD}"'
+# build the wildcard mask
+in_file = os.path.join(
+  directory,
+  "MultiSensor_QPE_01H_Pass2_00.00_*.grib2.gz"
 )
 
-# run it via the shell
-retcode = subprocess.call(cmd, shell=True)
-print("Batch exited with", retcode)
+# now assemble *one* string and shell it,
+# so that Java sees the literal * and expands internally
+script_dir = Path(__file__).parent
+batch = script_dir / "GridReader.cmd"
+cmd_str = (
+  f'"{batch}" '
+  f'-inFile "{in_file}" '
+  f'-outFile "C:\\Temp\\DataAcquisition\\precip\\DataOutDss\\test.dss" '
+  f'-extentsShapefile "C:\\Users\\…\\Subbasins_Reprojected.shp" '
+  f'-dssA SHG -dssB MRMS -dssC Precip -dssF 01H'
+)
+ret = subprocess.call(cmd_str, shell=True)
+print("Batch exited with", ret)
