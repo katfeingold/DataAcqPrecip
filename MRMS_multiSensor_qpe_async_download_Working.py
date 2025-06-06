@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
 from datetime import timedelta
+import subprocess
 import os
 import nest_asyncio
 nest_asyncio.apply()
@@ -44,14 +45,6 @@ if __name__ == '__main__':
     assert end >= datetime(2020,10,15), "MultiSensor MRMS data before 2020-10-15 does not exist, consider looking for GageCorr qpe grids"
     
 
-    """
-    https://inside.nssl.noaa.gov/mrms/past-code-updates/
-
-    In the MRMS v12.0 update to NCO section, the third bullet from the bottom:
-    -	Multi-sensor QPE scheme using gauges and model QPFs to fill radar coverage gaps
-    I think that suggests the MultiSensor_QPE is gage corrected.  So the data might have just changed names in the MRMS migration to 12.0.
-    """
-
     hour = timedelta(hours=1)
     os.makedirs(destination, exist_ok=True)
     
@@ -78,3 +71,9 @@ if __name__ == '__main__':
         loop = asyncio.get_event_loop()
         results = loop.run_until_complete(main(loop, tmp, destination))
         del loop, results
+
+
+cmd = r'"C:\RAMwork\Productpulls\DataAcq\DataAcqPrecip\GridReader.cmd" -inFile foo -dir bar'
+# shell=True allows batch files to run directly
+retcode = subprocess.call(cmd, shell=True)
+print("Batch exited with", retcode)

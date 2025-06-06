@@ -1,1 +1,11 @@
-urls.txt
+PRECIP:
+mrms (QPE)
+'https://mtarchive.geol.iastate.edu/{:04d}/{:02d}/{:02d}/mrms/ncep/MultiSensor_QPE_01H_Pass2/MultiSensor_QPE_01H_Pass2_00.00_{:04d}{:02d}{:02d}-{:02d}0000.grib2.gz'.format(date.year, date.month, date.day, date.year, date.month, date.day, date.hour)
+hrrr (QPF)
+"http://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod/hrrr.{date}/conus/hrrr.t{:02d}z.wrfsfcf{:02d}.grib2".format(cycle, hour, date=date)
+nam(QPF)
+"https://nomads.ncep.noaa.gov/pub/data/nccf/com/nam/prod/nam.{date}/nam.t00z.conusnest.hiresf{:02d}.tm00.grib2".format(int, date=date)
+NBM(QPF)
+"https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.{date}/00/core/blend.t00z.core.f{:03d}.co.grib2".format(int, date=date)
+
+Temp
