@@ -58,7 +58,7 @@ if __name__ == '__main__':
     os.makedirs(destination, exist_ok=True)
     start = datetime(2021, 10, 1, 0, 0)
     end = datetime(2021, 10, 2, 0, 0)   
-    destination = r"C:\Temp\DataAcquisition\precip"
+    # destination = r"C:\Temp\DataAcquisition\precip"
     
     
     assert start >= datetime(2020,10,15), "MultiSensor MRMS data before 2020-10-15 does not exist, consider looking for GageCorr qpe grids"
