@@ -1,0 +1,24 @@
+# params.txt
+# destination: where to save downloaded GRIB2 files
+destination = C:\Temp\RATTEMP
+
+# in_file can be a full glob pattern or a directory. 
+# this should match "destination
+# If you give a directory only, the script will append 
+# /MultiSensor_QPE_01H_Pass2_00.00_*.grib2.gz for user
+in_file     = C:\Temp\RATTEMP
+
+# Optional intermediate folder for output DSS
+out_dir     = C:\Temp\RATTEMP\DSSOUT
+
+# The final DSS filename (will be joined with out_dir )
+out_file    = test_config.dss
+
+# The shapefile to clip to
+shape_file  = C:\Projects\00.Videos\HEC-MetVue_MetInterp\HEC-MetVue_MetInterp\HEC-MetVue_MetInterp_Complete\Maps\Subbasins_Reprojected.shp
+
+# DSS parts
+DSSA        = SHG
+DSSB        = MRMS
+DSSC        = Precip
+DSSF        = 01H
