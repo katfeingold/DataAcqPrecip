@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-This script downloads MRMS data (MultiSensor_QPE_01H_Pass2) for a hard‐coded
-date range, then calls GridReader.cmd to slice/clip into a DSS.
-All inputs (paths, DSS parts, etc.) are read from params.txt in the same folder.
+MRMS downloader with Tkinter dialog for date selection.
 """
 
 import os
@@ -18,6 +16,9 @@ import asyncio
 import aiohttp
 import async_timeout
 
+import tkinter as tk
+from tkinter import ttk, messagebox
+
 #-------------------------------------------------------------------------------
 # 0) READ PARAMETERS FROM params.txt
 #-------------------------------------------------------------------------------
@@ -27,7 +28,6 @@ if not params_file.exists():
     print(f"ERROR: Cannot find {params_file}", file=sys.stderr)
     sys.exit(1)
 
-# Simple key=value parser (ignores blank lines and lines starting with #)
 params = {}
 with open(params_file, "r") as pf:
     for raw in pf:
@@ -39,7 +39,6 @@ with open(params_file, "r") as pf:
         key, val = line.split("=", 1)
         params[key.strip()] = val.strip()
 
-# Required values
 try:
     destination = params["destination"]
     in_file     = params["in_file"]
@@ -54,24 +53,21 @@ except KeyError as e:
     print(f"ERROR: Missing parameter {e} in {params_file}", file=sys.stderr)
     sys.exit(1)
 
-# Prepare directories
 os.makedirs(destination, exist_ok=True)
 
 if out_dir:
     os.makedirs(out_dir, exist_ok=True)
-    # if out_file is not absolute, join with out_dir
     if not os.path.isabs(out_file):
         out_file = os.path.join(out_dir, out_file)
 
-# If in_file is just a directory, append the expected glob
 if os.path.isdir(in_file):
-    in_file = os.path.join(in_file,
-                           "MultiSensor_QPE_01H_Pass2_00.00_*.grib2.gz")
-
+    in_file = os.path.join(
+        in_file,
+        "MultiSensor_QPE_01H_Pass2_00.00_*.grib2.gz"
+    )
 
 #-------------------------------------------------------------------------------
-# Python script that downloads the MRMS data and saves it in a destination file
-# (Hard‐coded date range; comes from the HMS team.)
+# ASYNC DOWNLOAD LOGIC (unchanged)
 #-------------------------------------------------------------------------------
 async def download_coroutine(url, session, destination):
     async with async_timeout.timeout(1200):
@@ -85,9 +81,9 @@ async def download_coroutine(url, session, destination):
                             break
                         f_handle.write(chunk)
             else:
-                # print URLs that failed
                 print("FAILED:", url)
             return await response.release()
+
 
 async def main(loop, url_list, destination):
     async with aiohttp.ClientSession() as session:
@@ -97,19 +93,133 @@ async def main(loop, url_list, destination):
         ]
         return await asyncio.gather(*tasks)
 
-if __name__ == "__main__":
-    # ------------------------------------------------------------------------
-    # Set your date range here
-    start = datetime(2021, 10, 1, 0, 0)
-    end   = datetime(2021, 10, 2, 0, 0)
+#-------------------------------------------------------------------------------
+# TKINTER DIALOG TO GET DATES
+#-------------------------------------------------------------------------------
+def ask_date_range():
+    """
+    Show modal dialog.
+    Returns (start_datetime, end_datetime) or None if cancelled.
+    """
+    root = tk.Tk()
+    root.title("Select MRMS Date Range")
+    root.resizable(False, False)
 
-    assert start >= datetime(2020,10,15), "MRMS data before 2020-10-15 does not exist"
-    assert end   >= datetime(2020,10,15), "MRMS data before 2020-10-15 does not exist"
+    # Center a bit
+    root.geometry("+200+200")
+
+    mode_var = tk.StringVar(value="custom")  # "custom" or "lookback"
+
+    # Frames
+    frm = ttk.Frame(root, padding=10)
+    frm.grid(row=0, column=0, sticky="nsew")
+
+    # --- Mode radio buttons ---
+    rb_custom = ttk.Radiobutton(
+        frm, text="Custom range (DD-MMM-YYYY hh:mm)",
+        variable=mode_var, value="custom"
+    )
+    rb_custom.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 5))
+
+    rb_lookback = ttk.Radiobutton(
+        frm, text="Lookback (days from now)",
+        variable=mode_var, value="lookback"
+    )
+    rb_lookback.grid(row=3, column=0, columnspan=2, sticky="w", pady=(10, 5))
+
+    # --- Custom range entries ---
+    ttk.Label(frm, text="Start:").grid(row=1, column=0, sticky="e")
+    start_entry = ttk.Entry(frm, width=25)
+    start_entry.grid(row=1, column=1, sticky="w")
+
+    ttk.Label(frm, text="End:").grid(row=2, column=0, sticky="e")
+    end_entry = ttk.Entry(frm, width=25)
+    end_entry.grid(row=2, column=1, sticky="w")
+
+    # Set dynamic defaults based on current date
+    today = datetime.now().date()
+    yesterday = today - timedelta(days=1)
+
+    start_entry.insert(0, yesterday.strftime("%d-%b-%Y 00:00"))
+    end_entry.insert(0, today.strftime("%d-%b-%Y 00:00"))
+
+
+    # --- Lookback entry ---
+    ttk.Label(frm, text="Days to look back:").grid(row=4, column=0, sticky="e")
+    lookback_entry = ttk.Entry(frm, width=10)
+    lookback_entry.grid(row=4, column=1, sticky="w")
+    lookback_entry.insert(0, "1")
+
+    result = {"start": None, "end": None}
+
+    def on_save():
+        try:
+            if mode_var.get() == "custom":
+                fmt = "%d-%b-%Y %H:%M"  # DD-MMM-YYYY hh:mm
+                start_str = start_entry.get().strip()
+                end_str = end_entry.get().strip()
+                start_dt = datetime.strptime(start_str, fmt)
+                end_dt = datetime.strptime(end_str, fmt)
+            else:
+                # lookback mode
+                days_str = lookback_entry.get().strip()
+                days = int(days_str)
+                end_dt = datetime.now()
+                start_dt = end_dt - timedelta(days=days)
+                # Optional: snap minutes/seconds to zero if desired
+                start_dt = start_dt.replace(minute=0, second=0, microsecond=0)
+                end_dt = end_dt.replace(minute=0, second=0, microsecond=0)
+
+            # sanity checks
+            if start_dt >= end_dt:
+                raise ValueError("Start must be before end.")
+            if start_dt < datetime(2020, 10, 15) or end_dt < datetime(2020, 10, 15):
+                raise ValueError("MRMS data before 2020-10-15 does not exist.")
+
+            result["start"] = start_dt
+            result["end"] = end_dt
+            root.destroy()
+        except Exception as e:
+            messagebox.showerror("Invalid input", str(e))
+
+    def on_cancel():
+        result["start"] = None
+        result["end"] = None
+        root.destroy()
+
+    # Buttons
+    btn_frame = ttk.Frame(frm)
+    btn_frame.grid(row=5, column=0, columnspan=2, pady=(15, 0), sticky="e")
+
+    save_btn = ttk.Button(btn_frame, text="Save", command=on_save)
+    save_btn.grid(row=0, column=0, padx=(0, 5))
+
+    cancel_btn = ttk.Button(btn_frame, text="Cancel", command=on_cancel)
+    cancel_btn.grid(row=0, column=1)
+
+    root.mainloop()
+    if result["start"] is None or result["end"] is None:
+        return None
+    return result["start"], result["end"]
+
+#-------------------------------------------------------------------------------
+# MAIN SCRIPT ENTRY
+#-------------------------------------------------------------------------------
+if __name__ == "__main__":
+    date_range = ask_date_range()
+    if date_range is None:
+        print("User cancelled, exiting.")
+        sys.exit(0)
+
+    start, end = date_range
+
+    # Existing assertions kept
+    assert start >= datetime(2020, 10, 15), "MRMS data before 2020-10-15 does not exist"
+    assert end   >= datetime(2020, 10, 15), "MRMS data before 2020-10-15 does not exist"
 
     hour = timedelta(hours=1)
     date = start
 
-    # build list of urls to download (skip ones already on disk)
     urls = []
     while date < end:
         url = (
@@ -125,17 +235,13 @@ if __name__ == "__main__":
             urls.append(url)
         date += hour
 
-    # chunk into blocks of 50
     chunk_size = 50
-    chunks = [urls[i:i+chunk_size] for i in range(0, len(urls), chunk_size)]
+    chunks = [urls[i:i + chunk_size] for i in range(0, len(urls), chunk_size)]
 
     for block in chunks:
         loop = asyncio.get_event_loop()
         loop.run_until_complete(main(loop, block, destination))
 
-    #--------------------------------------------------------------------------
-    # 5) Build and call GridReader.cmd
-    #--------------------------------------------------------------------------
     batch = script_dir / "GridReader.cmd"
     if not batch.exists():
         print(f"ERROR: Cannot find {batch}", file=sys.stderr)
