@@ -20,7 +20,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 #-------------------------------------------------------------------------------
-# 0) READ PARAMETERS FROM params.txt
+#  Reading from the params.txt file for later use
 #-------------------------------------------------------------------------------
 script_dir = Path(__file__).resolve().parent
 params_file = script_dir / "params.txt"
@@ -67,7 +67,7 @@ if os.path.isdir(in_file):
     )
 
 #-------------------------------------------------------------------------------
-# ASYNC DOWNLOAD LOGIC (unchanged)
+# ASYNC Diwnload stuff
 #-------------------------------------------------------------------------------
 async def download_coroutine(url, session, destination):
     async with async_timeout.timeout(1200):
@@ -93,9 +93,9 @@ async def main(loop, url_list, destination):
         ]
         return await asyncio.gather(*tasks)
 
-#-------------------------------------------------------------------------------
-# TKINTER DIALOG TO GET DATES
-#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------------------
+# Use TKINTER Dialog to get/input dates ( yeah its probably not great but its my first time)
+#-------------------------------------------------------------------------------------------
 def ask_date_range():
     """
     Show modal dialog.
@@ -105,16 +105,16 @@ def ask_date_range():
     root.title("Select MRMS Date Range")
     root.resizable(False, False)
 
-    # Center a bit
+    # ------Center a bit------
     root.geometry("+200+200")
 
     mode_var = tk.StringVar(value="custom")  # "custom" or "lookback"
 
-    # Frames
+    # ------Frames------
     frm = ttk.Frame(root, padding=10)
     frm.grid(row=0, column=0, sticky="nsew")
 
-    # --- Mode radio buttons ---
+    # ------ Mode radio buttons because who doesn't love those ------
     rb_custom = ttk.Radiobutton(
         frm, text="Custom range (DD-MMM-YYYY hh:mm)",
         variable=mode_var, value="custom"
@@ -127,7 +127,7 @@ def ask_date_range():
     )
     rb_lookback.grid(row=3, column=0, columnspan=2, sticky="w", pady=(10, 5))
 
-    # --- Custom range entries ---
+    # ------ Custom range entries ------
     ttk.Label(frm, text="Start:").grid(row=1, column=0, sticky="e")
     start_entry = ttk.Entry(frm, width=25)
     start_entry.grid(row=1, column=1, sticky="w")
@@ -136,7 +136,7 @@ def ask_date_range():
     end_entry = ttk.Entry(frm, width=25)
     end_entry.grid(row=2, column=1, sticky="w")
 
-    # Set dynamic defaults based on current date
+    #------ Setting defaults based on current date ------
     today = datetime.now().date()
     yesterday = today - timedelta(days=1)
 
@@ -144,7 +144,7 @@ def ask_date_range():
     end_entry.insert(0, today.strftime("%d-%b-%Y 00:00"))
 
 
-    # --- Lookback entry ---
+    # ------ Lookback ------
     ttk.Label(frm, text="Days to look back:").grid(row=4, column=0, sticky="e")
     lookback_entry = ttk.Entry(frm, width=10)
     lookback_entry.grid(row=4, column=1, sticky="w")
@@ -155,22 +155,22 @@ def ask_date_range():
     def on_save():
         try:
             if mode_var.get() == "custom":
-                fmt = "%d-%b-%Y %H:%M"  # DD-MMM-YYYY hh:mm
+                fmt = "%d-%b-%Y %H:%M"  # Needs to be DD-MMM-YYYY hh:mm Masks gotta love them
                 start_str = start_entry.get().strip()
                 end_str = end_entry.get().strip()
                 start_dt = datetime.strptime(start_str, fmt)
                 end_dt = datetime.strptime(end_str, fmt)
             else:
-                # lookback mode
+                # ------ lookback ------
                 days_str = lookback_entry.get().strip()
                 days = int(days_str)
                 end_dt = datetime.now()
                 start_dt = end_dt - timedelta(days=days)
-                # Optional: snap minutes/seconds to zero if desired
+                # ------ snap minutes/seconds to zero to get full day of data ------
                 start_dt = start_dt.replace(minute=0, second=0, microsecond=0)
                 end_dt = end_dt.replace(minute=0, second=0, microsecond=0)
 
-            # sanity checks
+            # ------insanity checks------
             if start_dt >= end_dt:
                 raise ValueError("Start must be before end.")
             if start_dt < datetime(2020, 10, 15) or end_dt < datetime(2020, 10, 15):
@@ -187,7 +187,7 @@ def ask_date_range():
         result["end"] = None
         root.destroy()
 
-    # Buttons
+    # ------ Lets make some buttons!! you know so we can save stuff ------
     btn_frame = ttk.Frame(frm)
     btn_frame.grid(row=5, column=0, columnspan=2, pady=(15, 0), sticky="e")
 
@@ -203,7 +203,7 @@ def ask_date_range():
     return result["start"], result["end"]
 
 #-------------------------------------------------------------------------------
-# MAIN SCRIPT ENTRY
+# Here is the Main part that actually does stuff! The workhorse if you will
 #-------------------------------------------------------------------------------
 if __name__ == "__main__":
     date_range = ask_date_range()
@@ -213,7 +213,7 @@ if __name__ == "__main__":
 
     start, end = date_range
 
-    # Existing assertions kept
+    # ------ Existing assertions and limitation errors ------
     assert start >= datetime(2020, 10, 15), "MRMS data before 2020-10-15 does not exist"
     assert end   >= datetime(2020, 10, 15), "MRMS data before 2020-10-15 does not exist"
 
