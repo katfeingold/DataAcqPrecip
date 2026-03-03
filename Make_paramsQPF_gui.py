@@ -9,14 +9,16 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
+# -------------------------------------------------------------- 
 # Name/location of the params file (same folder as this script)
+# --------------------------------------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
 PARAMS_PATH = SCRIPT_DIR / "params_qpf.txt"
 
 
-# --------------------------------------------
-# sets default values if the file missing
-# --------------------------------------------
+# ------------------------------------------------------------------
+# sets default values if the file missing or if no other parameters
+# ------------------------------------------------------------------
 DEFAULT_PARAMS = {
     "destination": r"C:\\Temp\\QPF",
     "in_file":     r"C:\\Temp\\QPF",
@@ -84,8 +86,8 @@ def save_params(params: dict):
 
 class ParamsEditor(tk.Tk):
     """
-    Small Tkinter window with entries for each param,
-    plus browse buttons for folder/file paths.
+    Tkinter window with entries for each param,
+    Also browse buttons for folder/file paths. Easy button!
     """
 
     def __init__(self):
@@ -93,21 +95,30 @@ class ParamsEditor(tk.Tk):
 
         self.title("Edit params_qpf.txt")
         self.resizable(False, False)
-
+        # --------------------------------------------
         # Slight padding
+        # --------------------------------------------
         main = ttk.Frame(self, padding=10)
         main.grid(row=0, column=0, sticky="nsew")
 
-        # Load existing or default params
+        # -------------------------------------------------------- 
+        # Load existing or "default" params from the file already
+        # --------------------------------------------------------
         self.params = load_params()
 
-        # Store Entry widgets keyed by param name
+        # --------------------------------------------
+        # Store Entry 
+        # --------------------------------------------
         self.entries = {}
 
+        # -------------------------------------------- 
         # Row counter for the grid layout
+        # --------------------------------------------
         row = 0
 
+        # -------------------------------------------- 
         # Helper to add a labeled entry and optional browse button
+        # --------------------------------------------
         def add_row(label_text, key, browse_type=None):
             nonlocal row
 
@@ -130,7 +141,7 @@ class ParamsEditor(tk.Tk):
 
                     if path:
                         # Replace single backslashes with doubled backslashes
-                        # to match the style used in the params file.
+                        # to match the params file.
                         norm = path.replace("\\", "\\\\")
                         entry.delete(0, tk.END)
                         entry.insert(0, norm)
@@ -147,7 +158,7 @@ class ParamsEditor(tk.Tk):
         add_row("Input folder ", "in_file", browse_type="dir")
         add_row("Output DSS folder", "out_dir", browse_type="dir")
         add_row("Output DSS filename", "out_file", browse_type=None)
-        add_row("Shapefile path", "shape_file", browse_type="file")
+        add_row("Trimming Shapefile path", "shape_file", browse_type="file")
         add_row("DSS A part", "DSSA", browse_type=None)
         add_row("DSS B part", "DSSB", browse_type=None)
         add_row("DSS C part", "DSSC", browse_type=None)

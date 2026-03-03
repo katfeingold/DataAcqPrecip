@@ -4,13 +4,13 @@ Download latest complete WPC 2.5km QPF forecast cycle,
 uses a Tkinter popup to choose the destination folder,
 then calls GridReader.cmd (HEC-MetVue utility) using params_qpf.txt.
 """
-# -------------------------------------------------
+# ---------------------------------------------------------------
 # Author (so you know who to yell at) Kat Feingold
 # Last updated: 3/2/2026
 # Updated Changes:
 # 3/2/2026 - script created
 # 3/2/2026 - added GridReader.cmd call driven by params_qpf.txt
-# --------------------------------------------------
+# ----------------------------------------------------------------
 import os
 import sys
 import asyncio
@@ -177,15 +177,17 @@ def ask_destination_folder() -> str | None:
         return None
     return folder
 
-# --------------------------------------------
+# ---------------------------------------------------
 # Call GridReader.cmd using params and chosen folder
-# --------------------------------------------
+# ---------------------------------------------------
 def run_gridreader_for_qpf(dest_dir: str):
     """
     Build and execute the GridReader.cmd call for the downloaded QPF files,
     using parameters from params_qpf.txt.
     """
+    # -----------------------------------------------------------------
     # Ensure output directory (if any) exists and resolve out_file path
+    # -----------------------------------------------------------------
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
         if not os.path.isabs(out_file):
@@ -195,20 +197,27 @@ def run_gridreader_for_qpf(dest_dir: str):
     else:
         out_path = out_file
 
-    # Override destination/in_file from params with GUI choice
+    # -----------------------------------------------------------------
+    # Override destination/in_file from params with users choice
     # If in_file is a directory, append the QPF pattern
+    # -------------------------------------------------------------------
     global destination, in_file
     destination = dest_dir
     if os.path.isdir(in_file):
         in_file = os.path.join(dest_dir, "p06m_*.grb")
 
+    # -----------------------------------------------------------
     # Locate GridReader.cmd in the same directory as this script
+    # -----------------------------------------------------------
     batch = script_dir / "GridReader.cmd"
     if not batch.exists():
         print(f"ERROR: Cannot find {batch}", file=sys.stderr)
         return
 
+    # -------------------------------------------------------------------------------------------------------
     # Build the command string exactly how GridReader.cmd expects it
+    # 'cuase it is very tempermentaland if you don't give it exactly what it wants it throws a temper tantrum
+    # ---------------------------------------------------------------------------------------------------------
     cmd_str = (
         f'"{batch}" '
         f'-inFile "{in_file}" '
@@ -219,7 +228,10 @@ def run_gridreader_for_qpf(dest_dir: str):
     )
 
     print("Running GridReader:", cmd_str)
-    # Use shell=True to match the MRMS script behavior
+    # -----------------------------------------------------------------------------------------
+    # Use shell=True to match the MRMS script behavior which i made first, so its my template
+    # Yes i'm sure there are better/easier ways to do this, but meh
+    # ------------------------------------------------------------------------------------------
     ret = subprocess.call(cmd_str, shell=True)
     print("GridReader exited with code", ret)
 
@@ -227,7 +239,9 @@ def run_gridreader_for_qpf(dest_dir: str):
 # This does the thing!!!!
 # --------------------------------------------
 def main():
-    # 1) Ask user where to put the QPF GRIB files
+    # ------------------------------------------- 
+    # Ask user where to put the QPF GRIB files
+    # --------------------------------------------
     dest_dir = ask_destination_folder()
     if not dest_dir:
         print("No folder selected, exiting.")
@@ -235,22 +249,30 @@ def main():
 
     Path(dest_dir).mkdir(parents=True, exist_ok=True)
 
-    # 2) Determine the latest complete QPF cycle
+    # --------------------------------------------------------------------------------
+    # Determine the latest complete QPF cycle, this will just pull the most recent QPF
+    # --------------------------------------------------------------------------------
     now_utc = datetime.now(timezone.utc)
     cycle = get_latest_complete_cycle_utc(now_utc)
     print(f"Using cycle: {cycle.strftime('%Y-%m-%d %H:%M')} UTC")
 
-    # 3) Show how many files we expect
+    # ------------------------------------------------------------------
+    # Show how many files we expect since we need a full set of QPF
+    # -------------------------------------------------------------------
     fnames = build_forecast_filenames(cycle)
     print(f"Expecting {len(fnames)} files.")
     if len(fnames) != 29:
         print("Warning: unexpected number of forecast hours (should be 29).")
 
-    # 4) Download the GRIB files for this cycle
+    # --------------------------------------------------
+    # Download the GRIB files for this entire forecast
+    # --------------------------------------------------
     asyncio.run(download_cycle_files(cycle, dest_dir))
     print("Downloads complete.")
 
-    # 5) Run GridReader.cmd to process the downloaded GRIBs into DSS (or other output)
+    # -------------------------------------------------------------------------------
+    # Run GridReader.cmd to process the downloaded GRIBs into DSS (or other output)
+    # -------------------------------------------------------------------------------
     run_gridreader_for_qpf(dest_dir)
 
     print("Done with QPF + GridReader workflow.")
