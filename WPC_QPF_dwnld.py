@@ -2,15 +2,16 @@
 """
 Download latest complete WPC 2.5km QPF forecast cycle,
 uses a Tkinter popup to choose the destination folder,
-then calls GridReader.cmd (HEC-MetVue utility) using params_qpf.txt.
+then calls NCGribExtractor.cmd (HEC-MetVue utility).
 """
-# ---------------------------------------------------------------
+# ----------------------------------------------------------------
 # Author (so you know who to yell at) Kat Feingold
 # Last updated: 3/2/2026
 # Updated Changes:
 # 3/2/2026 - script created
 # 3/2/2026 - added GridReader.cmd call driven by params_qpf.txt
-# ----------------------------------------------------------------
+# 3/3/2026 - switched to NCGribExtractor.cmd for GRIB extraction
+# -----------------------------------------------------------------
 import os
 import sys
 import asyncio
@@ -18,19 +19,23 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+
 import aiohttp
 import async_timeout
 
+
 import tkinter as tk
 from tkinter import filedialog, messagebox
+
 
 # --------------------------------------------
 # URL location for WPC QPF
 # --------------------------------------------
 BASE_URL = "https://ftp.wpc.ncep.noaa.gov/2p5km_qpf"
 
+
 # --------------------------------------------
-# Load params_qpf.txt (GridReader settings)
+# Load params_qpf.txt (settings)
 # --------------------------------------------
 script_dir = Path(__file__).resolve().parent
 params_file = script_dir / "params_qpf.txt"
@@ -38,7 +43,10 @@ if not params_file.exists():
     print(f"ERROR: Cannot find {params_file}", file=sys.stderr)
     sys.exit(1)
 
+
+#--------------------------------------------------------------------
 # Simple key = value parser (same style as MRMS script)
+#  ---------------------------------------------------------------
 params = {}
 with open(params_file, "r") as pf:
     for raw in pf:
@@ -50,8 +58,11 @@ with open(params_file, "r") as pf:
         key, val = line.split("=", 1)
         params[key.strip()] = val.strip()
 
+
 try:
-    # destination/in_file may be overridden by GUI later
+    # -----------------------------------------------------------
+    # destination may be overridden by Users choice later
+    # -----------------------------------------------------------
     destination = params["destination"]
     in_file     = params["in_file"]
     out_dir     = params.get("out_dir", "")
@@ -64,6 +75,7 @@ try:
 except KeyError as e:
     print(f"ERROR: Missing parameter {e} in {params_file}", file=sys.stderr)
     sys.exit(1)
+
 
 # --------------------------------------------
 # Find latest complete WPC QPF cycle (00/06/12/18)
@@ -78,17 +90,27 @@ def get_latest_complete_cycle_utc(now_utc: datetime) -> datetime:
     latest_cycle = None
 
     for h in cycles:
-        # Start from today's date with given cycle hour
+        # -----------------------------------
+        # Start from today's date with hour
+        # -----------------------------------
         cycle_time = now_utc.replace(hour=h, minute=0, second=0, microsecond=0)
+        # ---------------------------------------------------
         # If that time is in the future, back up to yesterday
+        # yes i know its weird, but i messed up the script twice before i put this in.
+        # so here it is, take it out if you want to
+        # ----------------------------------------------------
         if cycle_time > now_utc:
             cycle_time -= timedelta(days=1)
-        # Only consider cycles whose full set should exist by now
+        # -------------------------------------------------------------
+        # Only look at data sets whose full set should exist by now
+        # ------------------------------------------------------------
         if now_utc >= cycle_time + safety_margin:
             if latest_cycle is None or cycle_time > latest_cycle:
                 latest_cycle = cycle_time
 
-    # Fallback: pick the nearest past cycle if nothing met safety_margin
+    # ---------------------------------------------------------------------------------------------------
+    # Just in case all that failed pick the nearest past set 
+    # -----------------------------------------------------------------------------------------------
     if latest_cycle is None:
         h = (now_utc.hour // 6) * 6
         cycle_time = now_utc.replace(hour=h, minute=0, second=0, microsecond=0)
@@ -97,6 +119,7 @@ def get_latest_complete_cycle_utc(now_utc: datetime) -> datetime:
         latest_cycle = cycle_time
 
     return latest_cycle
+
 
 # --------------------------------------------
 # Build expected QPF filenames for a cycle
@@ -110,6 +133,7 @@ def build_forecast_filenames(cycle: datetime):
     offsets = list(range(6, 180, 6))
     return [f"p06m_{yyyymmddhh}f{offset:03d}.grb" for offset in offsets]
 
+
 # --------------------------------------------
 # Async single-file downloader
 # --------------------------------------------
@@ -117,9 +141,13 @@ async def download_file(session, url, dest_dir):
     """
     Download one file to dest_dir if it does not already exist.
     Uses a .part temp file and then renames on success.
+    Saves with local .grib extension instead of .grb.
     """
-    local_name = os.path.basename(url)
+    remote_name = os.path.basename(url)          # p06m_YYYYMMDDHHf006.grb
+    base, _ = os.path.splitext(remote_name)      # p06m_YYYYMMDDHHf006
+    local_name = base + ".grib"                  # p06m_YYYYMMDDHHf006.grib
     local_path = os.path.join(dest_dir, local_name)
+
     if os.path.exists(local_path):
         print(f"Exists, skipping: {local_name}")
         return
@@ -142,6 +170,7 @@ async def download_file(session, url, dest_dir):
     except Exception as e:
         print(f"Error downloading {url}: {e}")
 
+
 # --------------------------------------------
 # Async download of all files in a cycle
 # --------------------------------------------
@@ -155,6 +184,7 @@ async def download_cycle_files(cycle: datetime, dest_dir: str):
     async with aiohttp.ClientSession() as session:
         tasks = [download_file(session, url, dest_dir) for url in urls]
         await asyncio.gather(*tasks)
+
 
 # ------------------------------------------------------------------------------------------------------------------
 # TKINTER folder selector, yes there are better ways to do this, but too bad
@@ -177,63 +207,68 @@ def ask_destination_folder() -> str | None:
         return None
     return folder
 
+
 # ---------------------------------------------------
-# Call GridReader.cmd using params and chosen folder
+# Call NCGribExtractor.cmd using chosen folder
 # ---------------------------------------------------
-def run_gridreader_for_qpf(dest_dir: str):
+def run_ncgribextractor_for_qpf(dest_dir: str):
     """
-    Build and execute the GridReader.cmd call for the downloaded QPF files,
-    using parameters from params_qpf.txt.
+    Build and execute the NCGribExtractor.cmd call for the downloaded QPF files.
+    Runs once per .grib file in dest_dir.
     """
     # -----------------------------------------------------------------
-    # Ensure output directory (if any) exists and resolve out_file path
+    # Ensure output directory (if any) exists and resolve FLT out folder
     # -----------------------------------------------------------------
     if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
-        if not os.path.isabs(out_file):
-            out_path = os.path.join(out_dir, out_file)
-        else:
-            out_path = out_file
+        flt_out_dir = out_dir
     else:
-        out_path = out_file
+        flt_out_dir = os.path.join(dest_dir, "QPF_FLT")
+
+    os.makedirs(flt_out_dir, exist_ok=True)
 
     # -----------------------------------------------------------------
-    # Override destination/in_file from params with users choice
-    # If in_file is a directory, append the QPF pattern
-    # -------------------------------------------------------------------
-    global destination, in_file
-    destination = dest_dir
-    if os.path.isdir(in_file):
-        in_file = os.path.join(dest_dir, "p06m_*.grb")
-
-    # -----------------------------------------------------------
-    # Locate GridReader.cmd in the same directory as this script
-    # -----------------------------------------------------------
-    batch = script_dir / "GridReader.cmd"
-    if not batch.exists():
-        print(f"ERROR: Cannot find {batch}", file=sys.stderr)
+    # Locate NCGribExtractor.cmd in the same directory as this script
+    # -----------------------------------------------------------------
+    nc_batch = script_dir / "NCGribExtractor.cmd"
+    if not nc_batch.exists():
+        print(f"ERROR: Cannot find {nc_batch}", file=sys.stderr)
         return
 
-    # -------------------------------------------------------------------------------------------------------
-    # Build the command string exactly how GridReader.cmd expects it
-    # 'cuase it is very tempermentaland if you don't give it exactly what it wants it throws a temper tantrum
-    # ---------------------------------------------------------------------------------------------------------
-    cmd_str = (
-        f'"{batch}" '
-        f'-inFile "{in_file}" '
-        f'-outFile "{out_path}" '
-        f'-extentsShapefile "{shape_file}" '
-        f'-dssA {DSSA!r} -dssB {DSSB!r} '
-        f'-dssC {DSSC!r} -dssF {DSSF!r}'
-    )
+    # -----------------------------------------------------------------
+    # Variable name in the GRIB file to extract
+    # You MUST adjust this to match your WPC QPF variable definition
+    # (check with NCGribExtractor -info or MetVue's GRIB viewer)
+    # -----------------------------------------------------------------
+    variable_name = "Total_precipitation_surface_layer_6_Hour_Accumulation"
 
-    print("Running GridReader:", cmd_str)
-    # -----------------------------------------------------------------------------------------
-    # Use shell=True to match the MRMS script behavior which i made first, so its my template
-    # Yes i'm sure there are better/easier ways to do this, but meh
-    # ------------------------------------------------------------------------------------------
-    ret = subprocess.call(cmd_str, shell=True)
-    print("GridReader exited with code", ret)
+    # Loop over all .grib files in dest_dir
+    for fname in os.listdir(dest_dir):
+        if not fname.lower().endswith(".grib"):
+            continue
+
+        input_path = os.path.join(dest_dir, fname)
+        input_norm = input_path.replace("\\", "/")
+        out_norm = flt_out_dir.replace("\\", "/")
+
+        # -------------------------------------------------------------------------------------------------------
+        # Build the command string exactly how NCGribExtractor.cmd expects it
+        # 'cause it is very tempermental and if you don't give it exactly what it wants it throws a temper tantrum
+        # ---------------------------------------------------------------------------------------------------------
+        cmd_str = (
+            f'"{nc_batch}" '
+            f'-inputFile "{input_norm}" '
+            f'-variable "{variable_name}" '
+            f'-outputDirectory "{out_norm}"'
+        )
+
+        print("Running NCGribExtractor:", cmd_str)
+        # -----------------------------------------------------------------------------------------
+        # Use shell=True to match the MRMS script behavior which i made first, so its my template
+        # Yes i'm sure there are better/easier ways to do this, but meh
+        # ------------------------------------------------------------------------------------------
+        ret = subprocess.call(cmd_str, shell=True)
+        print(f"NCGribExtractor exited with code {ret} for {fname}")
+
 
 # --------------------------------------------
 # This does the thing!!!!
@@ -271,11 +306,12 @@ def main():
     print("Downloads complete.")
 
     # -------------------------------------------------------------------------------
-    # Run GridReader.cmd to process the downloaded GRIBs into DSS (or other output)
+    # Run NCGribExtractor.cmd to process the downloaded GRIBs into FLT (or other) files
     # -------------------------------------------------------------------------------
-    run_gridreader_for_qpf(dest_dir)
+    run_ncgribextractor_for_qpf(dest_dir)
 
-    print("Done with QPF + GridReader workflow.")
+    print("Done with QPF + NCGribExtractor workflow.")
+
 
 if __name__ == "__main__":
     main()
