@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Download latest complete WPC 2.5km QPF (p06m) forecast cycle,
-with a Tkinter popup to choose the destination folder.
+Download latest complete WPC 2.5km QPF forecast cycle,
+uses a Tkinter popup to choose the destination folder.
 """
 # -------------------------------------------------
 # Author (so you know who to yell at) Kat Feingold
-# Last updated:
-#UPdated Change:
+# Last updated: 3/2/2026
+# UPdated Change:
+# 3/2/2026 - script created
 # --------------------------------------------------
 import os
 import sys
@@ -24,8 +25,8 @@ from tkinter import filedialog, messagebox
 # URL location
 # --------------------------------------------
 BASE_URL = "https://ftp.wpc.ncep.noaa.gov/2p5km_qpf"
-
-# -------------------------------------------------------------------------------
+/
+#/ -------------------------------------------------------------------------------
 # looks for the most recent complete set (29 files) of WPF on the WPC website
 # Yes i know there are probably better ways to do this, but this is how i did it.
 # -------------------------------------------------------------------------------
