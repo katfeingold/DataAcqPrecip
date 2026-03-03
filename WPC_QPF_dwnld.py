@@ -19,20 +19,16 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-
 import aiohttp
 import async_timeout
 
-
 import tkinter as tk
 from tkinter import filedialog, messagebox
-
 
 # --------------------------------------------
 # URL location for WPC QPF
 # --------------------------------------------
 BASE_URL = "https://ftp.wpc.ncep.noaa.gov/2p5km_qpf"
-
 
 # --------------------------------------------
 # Load params_qpf.txt (settings)
@@ -42,7 +38,6 @@ params_file = script_dir / "params_qpf.txt"
 if not params_file.exists():
     print(f"ERROR: Cannot find {params_file}", file=sys.stderr)
     sys.exit(1)
-
 
 #--------------------------------------------------------------------
 # Simple key = value parser (same style as MRMS script)
@@ -57,7 +52,6 @@ with open(params_file, "r") as pf:
             continue
         key, val = line.split("=", 1)
         params[key.strip()] = val.strip()
-
 
 try:
     # -----------------------------------------------------------
@@ -75,7 +69,6 @@ try:
 except KeyError as e:
     print(f"ERROR: Missing parameter {e} in {params_file}", file=sys.stderr)
     sys.exit(1)
-
 
 # --------------------------------------------
 # Find latest complete WPC QPF cycle (00/06/12/18)
@@ -120,7 +113,6 @@ def get_latest_complete_cycle_utc(now_utc: datetime) -> datetime:
 
     return latest_cycle
 
-
 # --------------------------------------------
 # Build expected QPF filenames for a cycle
 # --------------------------------------------
@@ -133,7 +125,6 @@ def build_forecast_filenames(cycle: datetime):
     offsets = list(range(6, 180, 6))
     return [f"p06m_{yyyymmddhh}f{offset:03d}.grb" for offset in offsets]
 
-
 # --------------------------------------------
 # Async single-file downloader
 # --------------------------------------------
@@ -141,11 +132,10 @@ async def download_file(session, url, dest_dir):
     """
     Download one file to dest_dir if it does not already exist.
     Uses a .part temp file and then renames on success.
-    Saves with local .grib extension instead of .grb.
+    Saves with original .grb filename.
     """
     remote_name = os.path.basename(url)          # p06m_YYYYMMDDHHf006.grb
-    base, _ = os.path.splitext(remote_name)      # p06m_YYYYMMDDHHf006
-    local_name = base + ".grib"                  # p06m_YYYYMMDDHHf006.grib
+    local_name = remote_name                     # keep .grb
     local_path = os.path.join(dest_dir, local_name)
 
     if os.path.exists(local_path):
@@ -170,7 +160,6 @@ async def download_file(session, url, dest_dir):
     except Exception as e:
         print(f"Error downloading {url}: {e}")
 
-
 # --------------------------------------------
 # Async download of all files in a cycle
 # --------------------------------------------
@@ -184,7 +173,6 @@ async def download_cycle_files(cycle: datetime, dest_dir: str):
     async with aiohttp.ClientSession() as session:
         tasks = [download_file(session, url, dest_dir) for url in urls]
         await asyncio.gather(*tasks)
-
 
 # ------------------------------------------------------------------------------------------------------------------
 # TKINTER folder selector, yes there are better ways to do this, but too bad
@@ -207,14 +195,13 @@ def ask_destination_folder() -> str | None:
         return None
     return folder
 
-
 # ---------------------------------------------------
 # Call NCGribExtractor.cmd using chosen folder
 # ---------------------------------------------------
 def run_ncgribextractor_for_qpf(dest_dir: str):
     """
     Build and execute the NCGribExtractor.cmd call for the downloaded QPF files.
-    Runs once per .grib file in dest_dir.
+    Runs once per .grb file in dest_dir.
     """
     # -----------------------------------------------------------------
     # Ensure output directory (if any) exists and resolve FLT out folder
@@ -241,9 +228,9 @@ def run_ncgribextractor_for_qpf(dest_dir: str):
     # -----------------------------------------------------------------
     variable_name = "Total_precipitation_surface_layer_6_Hour_Accumulation"
 
-    # Loop over all .grib files in dest_dir
+    # Loop over all .grb files in dest_dir
     for fname in os.listdir(dest_dir):
-        if not fname.lower().endswith(".grib"):
+        if not fname.lower().endswith(".grb"):
             continue
 
         input_path = os.path.join(dest_dir, fname)
@@ -268,7 +255,6 @@ def run_ncgribextractor_for_qpf(dest_dir: str):
         # ------------------------------------------------------------------------------------------
         ret = subprocess.call(cmd_str, shell=True)
         print(f"NCGribExtractor exited with code {ret} for {fname}")
-
 
 # --------------------------------------------
 # This does the thing!!!!
@@ -315,3 +301,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
