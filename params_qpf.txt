@@ -1,0 +1,10 @@
+destination = C:\\Temp\\QPF        
+in_file     = C:\\Temp\\QPF        
+out_dir     = C:\\Temp\\QPF\\DSSOUT
+out_file    = qpf_latest.dss
+shape_file  = C:\\Projects\\...\\Subbasins_Reprojected.shp
+
+DSSA        = SHG
+DSSB        = B-Part
+DSSC        = C-Part
+DSSF        = 06H-QPF- Scripted
