@@ -2,17 +2,16 @@
 
 
 # ----------------------------------------------------------------
-# What it Does: Download MRMS QPE 
+# What it Does: Download MRMS cycle GRIB files.
 # Author (so you know who to yell at) Kat Feingold
 # Last updated: 
 # 3/4/2026 - creation
 # 3/4/2026 - fixed the dialog box
 # -----------------------------------------------------------------
 
+
 import os
 import sys
-import subprocess
-from pathlib import Path
 from datetime import datetime, timedelta
 
 import nest_asyncio
@@ -23,59 +22,13 @@ import aiohttp
 import async_timeout
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 
-#-------------------------------------------------------------------------------
-#  Reading from the params.txt file for later use
-#-------------------------------------------------------------------------------
-script_dir = Path(__file__).resolve().parent
-params_file = script_dir / "params.txt"
-if not params_file.exists():
-    print(f"ERROR: Cannot find {params_file}", file=sys.stderr)
-    sys.exit(1)
-
-params = {}
-with open(params_file, "r") as pf:
-    for raw in pf:
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            continue
-        key, val = line.split("=", 1)
-        params[key.strip()] = val.strip()
-
-try:
-    destination = params["destination"]
-    in_file     = params["in_file"]
-    out_dir     = params.get("out_dir", "")
-    out_file    = params["out_file"]
-    shape_file  = params["shape_file"]
-    DSSA        = params["DSSA"]
-    DSSB        = params["DSSB"]
-    DSSC        = params["DSSC"]
-    DSSF        = params["DSSF"]
-except KeyError as e:
-    print(f"ERROR: Missing parameter {e} in {params_file}", file=sys.stderr)
-    sys.exit(1)
-
-os.makedirs(destination, exist_ok=True)
-
-if out_dir:
-    os.makedirs(out_dir, exist_ok=True)
-    if not os.path.isabs(out_file):
-        out_file = os.path.join(out_dir, out_file)
-
-if os.path.isdir(in_file):
-    in_file = os.path.join(
-        in_file,
-        "MultiSensor_QPE_01H_Pass2_00.00_*.grib2.gz"
-    )
 
 #-------------------------------------------------------------------------------
 # ASYNC Diwnload stuff
 #-------------------------------------------------------------------------------
-async def download_coroutine(url, session, destination):
+async def download_coroutine(url, session, destination, saved_files):
     async with async_timeout.timeout(1200):
         async with session.get(url) as response:
             if response.status == 200:
@@ -86,18 +39,22 @@ async def download_coroutine(url, session, destination):
                         if not chunk:
                             break
                         f_handle.write(chunk)
+                saved_files.append(fp)
             else:
                 print("FAILED:", url)
             return await response.release()
 
 
-async def main(loop, url_list, destination):
+async def main_async(url_list, destination):
+    saved_files = []
     async with aiohttp.ClientSession() as session:
         tasks = [
-            download_coroutine(u, session, destination)
+            download_coroutine(u, session, destination, saved_files)
             for u in url_list
         ]
-        return await asyncio.gather(*tasks)
+        await asyncio.gather(*tasks)
+    return saved_files
+
 
 #-------------------------------------------------------------------------------------------
 # Use TKINTER Dialog to get/input dates ( yeah its probably not great but its my first time)
@@ -148,7 +105,6 @@ def ask_date_range():
 
     start_entry.insert(0, yesterday.strftime("%d-%b-%Y 00:00"))
     end_entry.insert(0, today.strftime("%d-%b-%Y 00:00"))
-
 
     # ------ Lookback ------
     ttk.Label(frm, text="Days to look back:").grid(row=4, column=0, sticky="e")
@@ -208,6 +164,43 @@ def ask_date_range():
         return None
     return result["start"], result["end"]
 
+
+def ask_destination_folder() -> str | None:
+    """
+    Popup to choose destination folder for MRMS files.
+    """
+    root = tk.Tk()
+    root.withdraw()
+    folder = filedialog.askdirectory(
+        title="Select folder to save MRMS files"
+    )
+    root.destroy()
+    if not folder:
+        return None
+    return folder
+
+
+def show_completion_popup(saved_files):
+    """
+    Popup summarizing what was saved and where.
+    """
+    root = tk.Tk()
+    root.withdraw()
+
+    lines = []
+    if saved_files:
+        lines.append("Download completed.")
+        lines.append("")
+        lines.append("Saved files:")
+        lines.extend(saved_files)
+    else:
+        lines.append("Download completed, but no new files were saved.")
+
+    msg = "\n".join(lines)
+    messagebox.showinfo("MRMS Download", msg)
+    root.destroy()
+
+
 #-------------------------------------------------------------------------------
 # Here is the Main part that actually does stuff! The workhorse if you will
 #-------------------------------------------------------------------------------
@@ -223,6 +216,14 @@ if __name__ == "__main__":
     assert start >= datetime(2020, 10, 15), "MRMS data before 2020-10-15 does not exist"
     assert end   >= datetime(2020, 10, 15), "MRMS data before 2020-10-15 does not exist"
 
+    # Ask user where to save the files
+    dest = ask_destination_folder()
+    if not dest:
+        print("No folder selected, exiting.")
+        sys.exit(0)
+
+    os.makedirs(dest, exist_ok=True)
+
     hour = timedelta(hours=1)
     date = start
 
@@ -237,31 +238,22 @@ if __name__ == "__main__":
             f"{date.hour:02d}0000.grib2.gz"
         )
         fn = os.path.basename(url)
-        if not os.path.isfile(os.path.join(destination, fn)):
+        if not os.path.isfile(os.path.join(dest, fn)):
             urls.append(url)
         date += hour
+
+    if not urls:
+        print("No new files to download in the selected range.")
+        show_completion_popup([])
+        sys.exit(0)
 
     chunk_size = 50
     chunks = [urls[i:i + chunk_size] for i in range(0, len(urls), chunk_size)]
 
+    all_saved = []
     for block in chunks:
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(main(loop, block, destination))
+        saved_block = loop.run_until_complete(main_async(block, dest))
+        all_saved.extend(saved_block)
 
-    batch = script_dir / "GridReader.cmd"
-    if not batch.exists():
-        print(f"ERROR: Cannot find {batch}", file=sys.stderr)
-        sys.exit(1)
-
-    cmd_str = (
-        f'"{batch}" '
-        f'-inFile "{in_file}" '
-        f'-outFile "{out_file}" '
-        f'-extentsShapefile "{shape_file}" '
-        f'-dssA {DSSA!r} -dssB {DSSB!r} '
-        f'-dssC {DSSC!r} -dssF {DSSF!r}'
-    )
-
-    print("Running:", cmd_str)
-    ret = subprocess.call(cmd_str, shell=True)
-    print("Batch exited with code", ret)
+    show_completion_popup(all_saved)
