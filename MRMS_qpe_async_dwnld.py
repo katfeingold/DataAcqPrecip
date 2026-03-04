@@ -1,27 +1,7 @@
 # -*- coding: utf-8 -*-
-<<<<<<< HEAD
-
-
-# ----------------------------------------------------------------
-# What it Does: Download MRMS cycle GRIB files.
-# Author (so you know who to yell at) Kat Feingold
-# Last updated: 
-# 3/4/2026 - creation
-# 3/4/2026 - fixed the dialog box
-# 3/4/2026 - added simple progress bar per file
-# -----------------------------------------------------------------
-
-=======
 """
-MRMS downloader with a dialog for date selection.
+MRMS downloader with Tkinter dialog for date selection.
 """
-# ----------------------------------------------------------------
-# Author (so you know who to yell at) Kat Feingold
-# Last updated: 3/3/2026
-# Updated Changes:
-# 3/2/2026 - script created
-# -----------------------------------------------------------------
->>>>>>> origin/main
 
 import os
 import sys
