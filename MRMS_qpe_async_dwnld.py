@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-MRMS downloader with Tkinter dialog for date selection.
+MRMS downloader with a dialog for date selection.
 """
+# ----------------------------------------------------------------
+# Author (so you know who to yell at) Kat Feingold
+# Last updated: 3/3/2026
+# Updated Changes:
+# 3/2/2026 - script created
+# -----------------------------------------------------------------
 
 import os
 import sys
