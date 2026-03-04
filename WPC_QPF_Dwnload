@@ -6,8 +6,8 @@
 # 3/4/2026 - creation
 # 3/4/2026 - fixed the dialog box
 # 3/4/2026 - added simple progress bar per file
+# 3/4/2026 - limited concurrency + longer timeouts
 # -----------------------------------------------------------------
-
 
 import os
 import sys
@@ -20,7 +20,6 @@ import async_timeout
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-
 
 # --------------------------------------------
 # URL locations for WPC QPF
@@ -216,38 +215,40 @@ def close_progress_window():
 # --------------------------------------------
 # Async single-file downloader (keeps .grb)
 # --------------------------------------------
-async def download_file(session, url, dest_dir, saved_files):
+async def download_file(session, sem, url, dest_dir, saved_files):
     local_name = os.path.basename(url)
     local_path = os.path.join(dest_dir, local_name)
 
-    if os.path.exists(local_path):
-        print(f"Exists, skipping: {local_name}")
-        # Still count it as "done" in progress, since nothing to download
-        update_progress_window()
-        return
+    async with sem:
+        if os.path.exists(local_path):
+            print(f"Exists, skipping: {local_name}")
+            # Still count it as "done" in progress, since nothing to download
+            update_progress_window()
+            return
 
-    try:
-        async with async_timeout.timeout(600):
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    print(f"FAILED {resp.status}: {url}")
-                    # Count failed attempt as completed step in progress
+        try:
+            # Give each request a generous timeout window
+            async with async_timeout.timeout(1200):
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        print(f"FAILED {resp.status}: {url}")
+                        # Count failed attempt as completed step in progress
+                        update_progress_window()
+                        return
+                    tmp_path = local_path + ".part"
+                    with open(tmp_path, "wb") as f:
+                        while True:
+                            chunk = await resp.content.read(1024 * 32)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                    os.replace(tmp_path, local_path)
+                    print(f"Downloaded: {local_name}")
+                    saved_files.append(local_path)
                     update_progress_window()
-                    return
-                tmp_path = local_path + ".part"
-                with open(tmp_path, "wb") as f:
-                    while True:
-                        chunk = await resp.content.read(1024 * 32)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                os.replace(tmp_path, local_path)
-                print(f"Downloaded: {local_name}")
-                saved_files.append(local_path)
-                update_progress_window()
-    except Exception as e:
-        print(f"Error downloading {url}: {e}")
-        update_progress_window()
+        except Exception as e:
+            print(f"Error downloading {url}: {e}")
+            update_progress_window()
 
 
 # --------------------------------------------
@@ -263,8 +264,18 @@ async def download_cycle_files(cycle: datetime, dest_dir: str):
 
     saved_files: list[str] = []
 
-    async with aiohttp.ClientSession() as session:
-        tasks = [download_file(session, url, dest_dir, saved_files) for url in urls]
+    # Limit concurrency to avoid overloading server / local system
+    sem = asyncio.Semaphore(4)
+
+    # Custom timeout: long total, moderate connect/read
+    timeout = aiohttp.ClientTimeout(
+        total=1800,       # up to 30 minutes total
+        sock_connect=30,  # 30s to establish connection
+        sock_read=120,    # 120s per read chunk
+    )
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        tasks = [download_file(session, sem, url, dest_dir, saved_files) for url in urls]
         await asyncio.gather(*tasks)
 
     return saved_files
@@ -373,7 +384,7 @@ def ask_cycle_mode(now_utc: datetime) -> tuple[str, datetime | None]:
 
     def on_cancel():
         result["mode"] = None
-        result["user_dt"] = None
+        result["end"] = None
         root.destroy()
 
     btn_frame = ttk.Frame(frame)
