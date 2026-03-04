@@ -5,7 +5,9 @@
 # Last updated: 
 # 3/4/2026 - creation
 # 3/4/2026 - fixed the dialog box
+# 3/4/2026 - added simple progress bar per file
 # -----------------------------------------------------------------
+
 
 import os
 import sys
@@ -18,6 +20,7 @@ import async_timeout
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+
 
 # --------------------------------------------
 # URL locations for WPC QPF
@@ -128,6 +131,89 @@ def build_wpc_qpf_filenames(cycle: datetime):
 
 
 # --------------------------------------------
+# Progress bar globals (same style as MRMS script)
+# --------------------------------------------
+_progress_root = None
+_progress_var = None
+_progress_label = None
+_progress_total = 0
+
+
+def create_progress_window(total_files: int):
+    """
+    Create a small Tk window with a determinate progress bar showing
+    how many QPF files have been downloaded out of total_files.
+    """
+    global _progress_root, _progress_var, _progress_label, _progress_total
+    _progress_total = total_files
+
+    _progress_root = tk.Tk()
+    _progress_root.title("QPF Download Progress")
+    _progress_root.resizable(False, False)
+
+    frame = ttk.Frame(_progress_root, padding=10)
+    frame.grid(row=0, column=0, sticky="nsew")
+
+    _progress_var = tk.IntVar(value=0)
+
+    ttk.Label(frame, text="Downloading QPF GRIB files...").grid(
+        row=0, column=0, sticky="w"
+    )
+
+    bar = ttk.Progressbar(
+        frame,
+        orient="horizontal",
+        mode="determinate",
+        maximum=total_files,
+        variable=_progress_var,
+        length=300,
+    )
+    bar.grid(row=1, column=0, pady=(5, 5))
+
+    _progress_label = ttk.Label(frame, text=f"0 of {total_files} files")
+    _progress_label.grid(row=2, column=0, sticky="w")
+
+    # Center the window a bit
+    _progress_root.update_idletasks()
+    w = _progress_root.winfo_width()
+    h = _progress_root.winfo_height()
+    sw = _progress_root.winfo_screenwidth()
+    sh = _progress_root.winfo_screenheight()
+    x = (sw // 2) - (w // 2)
+    y = (sh // 2) - (h // 2)
+    _progress_root.geometry(f"+{x}+{y}")
+    _progress_root.attributes("-topmost", True)
+    _progress_root.lift()
+
+    _progress_root.update()
+
+
+def update_progress_window():
+    """
+    Increment the file counter and refresh the progress window.
+    """
+    global _progress_root, _progress_var, _progress_label, _progress_total
+    if _progress_root is None:
+        return
+
+    current = _progress_var.get() + 1
+    _progress_var.set(current)
+    if _progress_label is not None:
+        _progress_label.config(text=f"{current} of {_progress_total} files")
+    _progress_root.update_idletasks()
+
+
+def close_progress_window():
+    """
+    Close and destroy the progress window if it exists.
+    """
+    global _progress_root
+    if _progress_root is not None:
+        _progress_root.destroy()
+        _progress_root = None
+
+
+# --------------------------------------------
 # Async single-file downloader (keeps .grb)
 # --------------------------------------------
 async def download_file(session, url, dest_dir, saved_files):
@@ -136,6 +222,8 @@ async def download_file(session, url, dest_dir, saved_files):
 
     if os.path.exists(local_path):
         print(f"Exists, skipping: {local_name}")
+        # Still count it as "done" in progress, since nothing to download
+        update_progress_window()
         return
 
     try:
@@ -143,6 +231,8 @@ async def download_file(session, url, dest_dir, saved_files):
             async with session.get(url) as resp:
                 if resp.status != 200:
                     print(f"FAILED {resp.status}: {url}")
+                    # Count failed attempt as completed step in progress
+                    update_progress_window()
                     return
                 tmp_path = local_path + ".part"
                 with open(tmp_path, "wb") as f:
@@ -154,8 +244,10 @@ async def download_file(session, url, dest_dir, saved_files):
                 os.replace(tmp_path, local_path)
                 print(f"Downloaded: {local_name}")
                 saved_files.append(local_path)
+                update_progress_window()
     except Exception as e:
         print(f"Error downloading {url}: {e}")
+        update_progress_window()
 
 
 # --------------------------------------------
@@ -357,6 +449,7 @@ def main():
     if mode is None:
         print("User cancelled cycle selection, exiting.")
         sys.exit(0)
+
     # --------------------------------------------------------------
     # Resolve to an actual complete cycle time under the constraints
     # ---------------------------------------------------------------
@@ -375,10 +468,21 @@ def main():
     print(f"Expecting {len(fnames)} files.")
 
     # ----------------------------------------------------
+    # Create progress window before starting downloads
+    # ----------------------------------------------------
+    create_progress_window(len(fnames))
+
+    # ----------------------------------------------------
     # Download the GRIB files for this entire forecast
     # -----------------------------------------------------
     saved_files = asyncio.run(download_cycle_files(cycle, dest_dir))
     print("Downloads complete.")
+
+    # ----------------------------------------------------
+    # Close progress window
+    # ----------------------------------------------------
+    close_progress_window()
+
     # -------------------------------------------------------
     # confirmation dialog of completion with file list
     # ------------------------------------------------------
