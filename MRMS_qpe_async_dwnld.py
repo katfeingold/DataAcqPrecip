@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
-"""
-MRMS downloader with Tkinter dialog for date selection.
-"""
+
+
+# ----------------------------------------------------------------
+# What it Does: Download MRMS QPE 
+# Author (so you know who to yell at) Kat Feingold
+# Last updated: 
+# 3/4/2026 - creation
+# 3/4/2026 - fixed the dialog box
+# -----------------------------------------------------------------
 
 import os
 import sys
