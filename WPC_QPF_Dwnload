@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-"""
-Download WPC 2.5km QPF forecast cycle GRIB files.
-
-"""
-
 # ----------------------------------------------------------------
+# What it Does: Download WPC 2.5km QPF forecast cycle GRIB files.
 # Author (so you know who to yell at) Kat Feingold
-# Last updated: 3/4/2026
+# Last updated: 
+# 3/4/2026 - creation
+# 3/4/2026 - fixed the dialog box
 # -----------------------------------------------------------------
 
 import os
@@ -33,7 +31,7 @@ BASE_URL_GRIB = "https://ftp.wpc.ncep.noaa.gov/grib"  # used with yyyymmdd/p06m_
 def get_latest_complete_cycle_utc(now_utc: datetime) -> datetime:
     # --------------------------------------------------------------------------------
     #Given current UTC time, return the most recent *complete* WPC QPF cycle time
-    #(00, 06, 12, 18 UTC), using a safety margin to allow files to finish posting.
+    #(00, 06, 12, 18 UTC), using a safety dance to allow files to finish posting.
     # ---------------------------------------------------------------------------------
     safety_margin = timedelta(hours=3)
     cycles = [0, 6, 12, 18]
@@ -75,20 +73,6 @@ def get_cycle_from_user_choice(now_utc: datetime, mode: str,
     # Decide which set to use based on mode:
     # "latest": use latest complete cycle.
     # "custom": user nneds to input date/time.
-    #
-    # In custom mode we:
-    #  - Enforce the time is within the last 3 days and not in the future.
-    #  - Snap that time DOWN to the previous 6-hour boundary (00, 06, 12, 18)
-    #    to define the cycle.
-    #  - Enforce that the resulting cycle is old enough to be complete.
-    #
-    # Examples of snapping:
-    #   14 UTC -> 12 UTC cycle
-    #   17 UTC -> 12 UTC cycle
-    #   19 UTC -> 18 UTC cycle
-    #   13 UTC -> 12 UTC cycle
-    #
-    #Raises ValueError if constraints are violated.
     # --------------------------------------------
 
     if mode == "latest":
