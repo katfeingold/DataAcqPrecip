@@ -68,16 +68,18 @@ def ask_date_range():
     root.title("Select MRMS Date Range")
     root.resizable(False, False)
 
-    # ------Center a bit------
+    
     root.geometry("+200+200")
 
-    mode_var = tk.StringVar(value="custom")  # "custom" or "lookback"
+    mode_var = tk.StringVar(value="custom")  
 
-    # ------Frames------
+   
     frm = ttk.Frame(root, padding=10)
     frm.grid(row=0, column=0, sticky="nsew")
 
-    # ------ Mode radio buttons because who doesn't love those ------
+    # ---------------------------------------------------------
+    # Mode radio buttons because who doesn't love those 
+    # -----------------------------------------------------------
     rb_custom = ttk.Radiobutton(
         frm, text="Custom range (DD-MMM-YYYY hh:mm)",
         variable=mode_var, value="custom"
@@ -90,7 +92,7 @@ def ask_date_range():
     )
     rb_lookback.grid(row=3, column=0, columnspan=2, sticky="w", pady=(10, 5))
 
-    # ------ Custom range entries ------
+    
     ttk.Label(frm, text="Start:").grid(row=1, column=0, sticky="e")
     start_entry = ttk.Entry(frm, width=25)
     start_entry.grid(row=1, column=1, sticky="w")
@@ -99,14 +101,14 @@ def ask_date_range():
     end_entry = ttk.Entry(frm, width=25)
     end_entry.grid(row=2, column=1, sticky="w")
 
-    #------ Setting defaults based on current date ------
+    
     today = datetime.now().date()
     yesterday = today - timedelta(days=1)
 
     start_entry.insert(0, yesterday.strftime("%d-%b-%Y 00:00"))
     end_entry.insert(0, today.strftime("%d-%b-%Y 00:00"))
 
-    # ------ Lookback ------
+    
     ttk.Label(frm, text="Days to look back:").grid(row=4, column=0, sticky="e")
     lookback_entry = ttk.Entry(frm, width=10)
     lookback_entry.grid(row=4, column=1, sticky="w")
@@ -123,16 +125,18 @@ def ask_date_range():
                 start_dt = datetime.strptime(start_str, fmt)
                 end_dt = datetime.strptime(end_str, fmt)
             else:
-                # ------ lookback ------
+                
                 days_str = lookback_entry.get().strip()
                 days = int(days_str)
                 end_dt = datetime.now()
                 start_dt = end_dt - timedelta(days=days)
-                # ------ snap minutes/seconds to zero to get full day of data ------
+                
                 start_dt = start_dt.replace(minute=0, second=0, microsecond=0)
                 end_dt = end_dt.replace(minute=0, second=0, microsecond=0)
 
-            # ------insanity checks------
+            # ---------------------
+            # insanity checks
+            # ---------------------
             if start_dt >= end_dt:
                 raise ValueError("Start must be before end.")
             if start_dt < datetime(2020, 10, 15) or end_dt < datetime(2020, 10, 15):
@@ -149,7 +153,9 @@ def ask_date_range():
         result["end"] = None
         root.destroy()
 
-    # ------ Lets make some buttons!! you know so we can save stuff ------
+    # --------------------------------------------------------------
+    # Lets make some buttons!! you know so we can save stuff 
+    # -----------------------------------------------------------
     btn_frame = ttk.Frame(frm)
     btn_frame.grid(row=5, column=0, columnspan=2, pady=(15, 0), sticky="e")
 
@@ -212,11 +218,15 @@ if __name__ == "__main__":
 
     start, end = date_range
 
-    # ------ Existing assertions and limitation errors ------
+    # ------------------------------------- 
+    # since it only goes back so far 
+    # -------------------------------------
     assert start >= datetime(2020, 10, 15), "MRMS data before 2020-10-15 does not exist"
     assert end   >= datetime(2020, 10, 15), "MRMS data before 2020-10-15 does not exist"
 
-    # Ask user where to save the files
+    # -------------------------------------
+    # Ask where to save the files
+    # --------------------------------------
     dest = ask_destination_folder()
     if not dest:
         print("No folder selected, exiting.")
