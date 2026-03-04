@@ -10,6 +10,7 @@ using a Tkinter popup to choose the destination folder.
 # Updated Changes:
 # 3/2/2026 - script created
 # 3/3/2026 - stripped to just download GRIB files
+# 3/4/2026 - popup now lists all downloaded files
 # -----------------------------------------------------------------
 
 import os
@@ -86,11 +87,12 @@ def build_wpc_qpf_filenames(cycle: datetime):
 # --------------------------------------------
 # Async single-file downloader (keeps .grb)
 # --------------------------------------------
-async def download_file(session, url, dest_dir):
+async def download_file(session, url, dest_dir, saved_files):
     """
     Download one file to dest_dir if it does not already exist.
     Uses a .part temp file and then renames on success.
     Saves with original .grb filename.
+    Tracks successfully downloaded paths in saved_files.
     """
     local_name = os.path.basename(url)
     local_path = os.path.join(dest_dir, local_name)
@@ -114,6 +116,7 @@ async def download_file(session, url, dest_dir):
                         f.write(chunk)
                 os.replace(tmp_path, local_path)
                 print(f"Downloaded: {local_name}")
+                saved_files.append(local_path)
     except Exception as e:
         print(f"Error downloading {url}: {e}")
 
@@ -125,6 +128,7 @@ async def download_cycle_files(cycle: datetime, dest_dir: str):
     """
     Build all expected URLs for the cycle and download them concurrently,
     using the WPC grib/YYYYMMDD/p06m_YYYYMMDDHHfXXX.grb pattern.
+    Returns a list of full paths to successfully downloaded files.
     """
     dt, hh, filenames = build_wpc_qpf_filenames(cycle)
     base = f"{BASE_URL_GRIB}/{dt}/"
@@ -133,9 +137,13 @@ async def download_cycle_files(cycle: datetime, dest_dir: str):
     print(f"Download base URL: {base}")
     print(f"First file: {filenames[0]}, last file: {filenames[-1]}")
 
+    saved_files: list[str] = []
+
     async with aiohttp.ClientSession() as session:
-        tasks = [download_file(session, url, dest_dir) for url in urls]
+        tasks = [download_file(session, url, dest_dir, saved_files) for url in urls]
         await asyncio.gather(*tasks)
+
+    return saved_files
 
 
 # ------------------------------------------------------------------------------------------------------------------
@@ -160,17 +168,31 @@ def ask_destination_folder() -> str | None:
     return folder
 
 
-def show_completion_popup(dest_dir: str):
+def show_completion_popup(dest_dir: str, saved_files: list[str]):
     """
-    Show a simple popup that tells the user the download is complete
-    and where the files were saved.
+    Show a popup that tells the user the download is complete
+    and lists all downloaded files with their full paths.
     """
     root = tk.Tk()
     root.withdraw()
-    messagebox.showinfo(
-        "WPC QPF Download",
-        f"Download completed.\n\nFiles saved in:\n{dest_dir}"
-    )
+
+    lines = []
+    lines.append("Download completed.")
+    lines.append("")
+    lines.append("Destination folder:")
+    lines.append(dest_dir)
+
+    if saved_files:
+        lines.append("")
+        lines.append("Downloaded files:")
+        lines.extend(saved_files)
+    else:
+        lines.append("")
+        lines.append("No new files were downloaded (they may already exist).")
+
+    msg = "\n".join(lines)
+
+    messagebox.showinfo("WPC QPF Download", msg)
     root.destroy()
 
 
@@ -204,13 +226,13 @@ def main():
     # --------------------------------------------------
     # Download the GRIB files for this entire forecast
     # --------------------------------------------------
-    asyncio.run(download_cycle_files(cycle, dest_dir))
+    saved_files = asyncio.run(download_cycle_files(cycle, dest_dir))
     print("Downloads complete.")
 
     # ----------------------------------------
-    # Optional: GUI confirmation of completion
+    # GUI confirmation of completion with file list
     # ----------------------------------------
-    show_completion_popup(dest_dir)
+    show_completion_popup(dest_dir, saved_files)
 
     print("Done with QPF download workflow.")
 
