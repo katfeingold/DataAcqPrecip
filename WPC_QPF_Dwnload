@@ -1,16 +1,12 @@
 # -*- coding: utf-8 -*-
-"""
-Download latest complete WPC 2.5km QPF forecast cycle,
-using a Tkinter popup to choose the destination folder.
-"""
-
 # ----------------------------------------------------------------
+# What it Does: Download WPC 2.5km QPF forecast files.
 # Author (so you know who to yell at) Kat Feingold
-# Last updated: 3/3/2026
-# Updated Changes:
-# 3/2/2026 - script created
-# 3/3/2026 - stripped to just download GRIB files
-# 3/4/2026 - popup now lists all downloaded files
+# Last updated: 
+# 3/4/2026 - creation
+# 3/4/2026 - fixed the dialog box
+# 3/4/2026 - added simple progress bar per file
+# 
 # -----------------------------------------------------------------
 
 import os
@@ -23,7 +19,7 @@ import aiohttp
 import async_timeout
 
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 
 # --------------------------------------------
 # URL locations for WPC QPF
@@ -35,26 +31,34 @@ BASE_URL_GRIB = "https://ftp.wpc.ncep.noaa.gov/grib"  # used with yyyymmdd/p06m_
 # Find latest complete WPC QPF cycle (00/06/12/18)
 # --------------------------------------------
 def get_latest_complete_cycle_utc(now_utc: datetime) -> datetime:
-    """
-    Given current UTC time, return the most recent *complete* WPC QPF cycle time
-    (00, 06, 12, 18 UTC), using a safety margin to allow files to finish posting.
-    """
-    safety_margin = timedelta(hours=3)  # buffer after nominal cycle time
+    # --------------------------------------------------------------------------------
+    #Given current UTC time, return the most recent *complete* WPC QPF cycle time
+    #(00, 06, 12, 18 UTC), using a safety dance to allow files to finish posting.
+    # ---------------------------------------------------------------------------------
+    safety_margin = timedelta(hours=3)
     cycles = [0, 6, 12, 18]
     latest_cycle = None
 
     for h in cycles:
+        # --------------------------------------------
         # Start from today's date with hour
+        # --------------------------------------------
         cycle_time = now_utc.replace(hour=h, minute=0, second=0, microsecond=0)
+        # ------------------------------------------------------
         # If that time is in the future, back up to yesterday
+        # -----------------------------------------------------
         if cycle_time > now_utc:
             cycle_time -= timedelta(days=1)
-        # Only look at data sets whose full set should exist by now
+        # ----------------------------------------------------------------------------------------------
+        # Only look at data sets whose full set should exist by now, and i know there are more efficent ways
+        # --------------------------------------------------------------------------------------------------
         if now_utc >= cycle_time + safety_margin:
             if latest_cycle is None or cycle_time > latest_cycle:
                 latest_cycle = cycle_time
 
-    # Just in case all that failed pick the nearest past set
+    # -----------------------------------------------------------------------------------
+    # Just in case all that failed, and lets face it, it might, pick the nearest past set
+    # ------------------------------------------------------------------------------------
     if latest_cycle is None:
         h = (now_utc.hour // 6) * 6
         cycle_time = now_utc.replace(hour=h, minute=0, second=0, microsecond=0)
@@ -65,71 +69,191 @@ def get_latest_complete_cycle_utc(now_utc: datetime) -> datetime:
     return latest_cycle
 
 
+def get_cycle_from_user_choice(now_utc: datetime, mode: str,
+                               user_dt_utc: datetime | None) -> datetime:
+    # --------------------------------------------
+    # Decide which set to use based on mode:
+    # "latest": use latest complete cycle.
+    # "custom": user nneds to input date/time.
+    # --------------------------------------------
+
+    if mode == "latest":
+        return get_latest_complete_cycle_utc(now_utc)
+
+    if mode != "custom" or user_dt_utc is None:
+        raise ValueError("Invalid mode or missing user date/time.")
+
+    # -----------------------------------------------------------------------------------
+    # Limit: only allow requests within the last 3 days from today for logistical reasons
+    # ------------------------------------------------------------------------------------
+    if user_dt_utc < now_utc - timedelta(days=3):
+        raise ValueError("Selected time is more than 3 days in the past.")
+    if user_dt_utc > now_utc:
+        raise ValueError("Selected time cannot be in the future.")
+
+    # ---------------------------------------------
+    # Snap user input DOWN to previous 6‑hour boundary
+    # (e.g., 14 -> 12, 17 -> 12, 19 -> 18, 03 -> 00)
+    # ---------------------------------------------
+    hour = user_dt_utc.hour
+    snapped_hour = (hour // 6) * 6  # 0, 6, 12, or 18 on that same day
+    candidate = user_dt_utc.replace(
+        hour=snapped_hour, minute=0, second=0, microsecond=0
+    )
+
+    # Enforce 3‑day window for the resulting cycle as well
+    if candidate < now_utc - timedelta(days=3):
+        raise ValueError("Resulting cycle is more than 3 days in the past.")
+
+    # --------------------------------------------------------------------
+    # Also enforce that the cycle has had time to complete (safety dance)
+    # ----------------------------------------------------------------------
+    safety_margin = timedelta(hours=3)
+    if now_utc < candidate + safety_margin:
+        raise ValueError("Selected cycle is too recent and may be incomplete.")
+
+    return candidate
+
+
 # --------------------------------------------
-# Build WPC-style filenames for a cycle
+# Build filenames for a cycle
 # --------------------------------------------
 def build_wpc_qpf_filenames(cycle: datetime):
-    """
-    Build filenames in the style:
-    p06m_YYYYMMDDHHfXXX.grb, XXX = 006..072 (example loop 6–72 by 6).
-    Adjust the range if you need more/less forecast hours.
-    """
     dt = cycle.strftime("%Y%m%d")   # YYYYMMDD
     hh = cycle.strftime("%H")       # HH
     regex_prefix = f"p06m_{dt}{hh}f"   # p06m_YYYYMMDDHHf
     filenames = []
-    for x in range(6, 73, 6):      # 6,12,...,72 -> adjust if desired
-        filler = f"{x:03d}.grb"    # 006.grb, 012.grb, ...
+    for x in range(6, 73, 6):      # 6,12,...,72
+        filler = f"{x:03d}.grb"    # 006.grb, 012.grb,
         filenames.append(regex_prefix + filler)
     return dt, hh, filenames
 
 
 # --------------------------------------------
+# Progress bar globals (same style as MRMS script)
+# --------------------------------------------
+_progress_root = None
+_progress_var = None
+_progress_label = None
+_progress_total = 0
+
+
+def create_progress_window(total_files: int):
+    """
+    Create a small Tk window with a determinate progress bar showing
+    how many QPF files have been downloaded out of total_files.
+    """
+    global _progress_root, _progress_var, _progress_label, _progress_total
+    _progress_total = total_files
+
+    _progress_root = tk.Tk()
+    _progress_root.title("QPF Download Progress")
+    _progress_root.resizable(False, False)
+
+    frame = ttk.Frame(_progress_root, padding=10)
+    frame.grid(row=0, column=0, sticky="nsew")
+
+    _progress_var = tk.IntVar(value=0)
+
+    ttk.Label(frame, text="Downloading QPF GRIB files...").grid(
+        row=0, column=0, sticky="w"
+    )
+
+    bar = ttk.Progressbar(
+        frame,
+        orient="horizontal",
+        mode="determinate",
+        maximum=total_files,
+        variable=_progress_var,
+        length=300,
+    )
+    bar.grid(row=1, column=0, pady=(5, 5))
+
+    _progress_label = ttk.Label(frame, text=f"0 of {total_files} files")
+    _progress_label.grid(row=2, column=0, sticky="w")
+
+    # Center the window a bit
+    _progress_root.update_idletasks()
+    w = _progress_root.winfo_width()
+    h = _progress_root.winfo_height()
+    sw = _progress_root.winfo_screenwidth()
+    sh = _progress_root.winfo_screenheight()
+    x = (sw // 2) - (w // 2)
+    y = (sh // 2) - (h // 2)
+    _progress_root.geometry(f"+{x}+{y}")
+    _progress_root.attributes("-topmost", True)
+    _progress_root.lift()
+
+    _progress_root.update()
+
+
+def update_progress_window():
+    """
+    Increment the file counter and refresh the progress window.
+    """
+    global _progress_root, _progress_var, _progress_label, _progress_total
+    if _progress_root is None:
+        return
+
+    current = _progress_var.get() + 1
+    _progress_var.set(current)
+    if _progress_label is not None:
+        _progress_label.config(text=f"{current} of {_progress_total} files")
+    _progress_root.update_idletasks()
+
+
+def close_progress_window():
+    """
+    Close and destroy the progress window if it exists.
+    """
+    global _progress_root
+    if _progress_root is not None:
+        _progress_root.destroy()
+        _progress_root = None
+
+
+# --------------------------------------------
 # Async single-file downloader (keeps .grb)
 # --------------------------------------------
-async def download_file(session, url, dest_dir, saved_files):
-    """
-    Download one file to dest_dir if it does not already exist.
-    Uses a .part temp file and then renames on success.
-    Saves with original .grb filename.
-    Tracks successfully downloaded paths in saved_files.
-    """
+async def download_file(session, sem, url, dest_dir, saved_files):
     local_name = os.path.basename(url)
     local_path = os.path.join(dest_dir, local_name)
 
-    if os.path.exists(local_path):
-        print(f"Exists, skipping: {local_name}")
-        return
+    async with sem:
+        # ------------------------------------------------------------
+        # Always (re)download the file and overwrite if it exists
+        # ------------------------------------------------------------
+        try:
+            # Give each request a generous timeout window
+            async with async_timeout.timeout(1200):
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        print(f"FAILED {resp.status}: {url}")
+                        # Count failed attempt as completed step in progress
+                        update_progress_window()
+                        return
+                    tmp_path = local_path + ".part"
+                    with open(tmp_path, "wb") as f:
+                        while True:
+                            chunk = await resp.content.read(1024 * 32)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                    # os.replace will overwrite existing file if present
+                    os.replace(tmp_path, local_path)
+                    print(f"Downloaded: {local_name}")
+                    saved_files.append(local_path)
+                    update_progress_window()
+        except Exception as e:
+            print(f"Error downloading {url}: {e}")
+            update_progress_window()
 
-    try:
-        async with async_timeout.timeout(600):
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    print(f"FAILED {resp.status}: {url}")
-                    return
-                tmp_path = local_path + ".part"
-                with open(tmp_path, "wb") as f:
-                    while True:
-                        chunk = await resp.content.read(1024 * 32)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                os.replace(tmp_path, local_path)
-                print(f"Downloaded: {local_name}")
-                saved_files.append(local_path)
-    except Exception as e:
-        print(f"Error downloading {url}: {e}")
 
 
 # --------------------------------------------
 # Async download of all files in a cycle
 # --------------------------------------------
 async def download_cycle_files(cycle: datetime, dest_dir: str):
-    """
-    Build all expected URLs for the cycle and download them concurrently,
-    using the WPC grib/YYYYMMDD/p06m_YYYYMMDDHHfXXX.grb pattern.
-    Returns a list of full paths to successfully downloaded files.
-    """
     dt, hh, filenames = build_wpc_qpf_filenames(cycle)
     base = f"{BASE_URL_GRIB}/{dt}/"
     urls = [base + name for name in filenames]
@@ -139,8 +263,18 @@ async def download_cycle_files(cycle: datetime, dest_dir: str):
 
     saved_files: list[str] = []
 
-    async with aiohttp.ClientSession() as session:
-        tasks = [download_file(session, url, dest_dir, saved_files) for url in urls]
+    # Limit concurrency to avoid overloading server / local system
+    sem = asyncio.Semaphore(4)
+
+    # Custom timeout: long total, moderate connect/read
+    timeout = aiohttp.ClientTimeout(
+        total=1800,       # up to 30 minutes total
+        sock_connect=30,  # 30s to establish connection
+        sock_read=120,    # 120s per read chunk
+    )
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        tasks = [download_file(session, sem, url, dest_dir, saved_files) for url in urls]
         await asyncio.gather(*tasks)
 
     return saved_files
@@ -151,10 +285,6 @@ async def download_cycle_files(cycle: datetime, dest_dir: str):
 # this is the way we are doing it here.
 # ------------------------------------------------------------------------------------------------------------------
 def ask_destination_folder() -> str | None:
-    """
-    Show a minimal Tkinter dialog to choose a destination folder.
-    Returns the selected path or None if cancelled.
-    """
     root = tk.Tk()
     root.withdraw()  # hide main window
 
@@ -168,31 +298,196 @@ def ask_destination_folder() -> str | None:
     return folder
 
 
-def show_completion_popup(dest_dir: str, saved_files: list[str]):
-    """
-    Show a popup that tells the user the download is complete
-    and lists all downloaded files with their full paths.
-    """
+def ask_cycle_mode(now_utc: datetime) -> tuple[str, datetime | None]:
+    root = tk.Tk()
+    root.title("QPF Cycle Selection")
+    root.resizable(False, False)
+
+    frame = ttk.Frame(root, padding=10)
+    frame.grid(row=0, column=0, sticky="nsew")
+
+    mode_var = tk.StringVar(value="latest")
+
+    ttk.Radiobutton(
+        frame, text="Latest complete QPF cycle",
+        variable=mode_var, value="latest"
+    ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 5))
+
+    ttk.Radiobutton(
+        frame, text="Custom date & hour (UTC, last 3 days)",
+        variable=mode_var, value="custom"
+    ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 5))
+
+    # ------------------------------------------------------
+    # Dropdown options for the last 3 days (UTC)
+    # -----------------------------------------------------
+    today_utc = now_utc.date()
+    dates_utc = [today_utc - timedelta(days=i) for i in range(0, 3)]
+    date_labels = [d.strftime("%Y-%m-%d (UTC)") for d in dates_utc]
+
+    ttk.Label(frame, text="Date (UTC):").grid(row=2, column=0, sticky="e", pady=(10, 2))
+    date_combo = ttk.Combobox(frame, values=date_labels, state="readonly", width=20)
+    date_combo.grid(row=2, column=1, sticky="w", pady=(10, 2))
+    date_combo.current(0)
+
+    # --------------------------------------------
+    # Hour dropdown 0–23
+    # --------------------------------------------
+    ttk.Label(frame, text="Hour (UTC):").grid(row=3, column=0, sticky="e")
+    hour_values = [f"{h:02d}" for h in range(24)]
+    hour_combo = ttk.Combobox(frame, values=hour_values, state="readonly", width=5)
+    hour_combo.grid(row=3, column=1, sticky="w")
+    hour_combo.set(f"{now_utc.hour:02d}")
+
+    result = {"mode": None, "user_dt": None}
+
+    def on_ok():
+        try:
+            m = mode_var.get()
+            if m == "latest":
+                result["mode"] = "latest"
+                result["user_dt"] = None
+                root.destroy()
+                return
+            # ------------------------------------------------------
+            # Custom mode: get selected date & hour from dropdowns
+            # --------------------------------------------------------
+            date_idx = date_combo.current()
+            if date_idx < 0 or date_idx >= len(dates_utc):
+                raise ValueError("Please select a date.")
+
+            dt_date = dates_utc[date_idx]
+
+            hour_str = hour_combo.get().strip()
+            if hour_str == "":
+                raise ValueError("Please select an hour.")
+            hour_int = int(hour_str)
+            if not (0 <= hour_int <= 23):
+                raise ValueError("Hour must be between 0 and 23.")
+
+            user_dt = datetime(
+                year=dt_date.year,
+                month=dt_date.month,
+                day=dt_date.day,
+                hour=hour_int,
+                minute=0,
+                second=0,
+                tzinfo=timezone.utc,
+            )
+
+            result["mode"] = "custom"
+            result["user_dt"] = user_dt
+            root.destroy()
+        except Exception as e:
+            messagebox.showerror("Invalid input", str(e))
+
+    def on_cancel():
+        result["mode"] = None
+        result["end"] = None
+        root.destroy()
+
+    btn_frame = ttk.Frame(frame)
+    btn_frame.grid(row=4, column=0, columnspan=2, pady=(10, 0), sticky="e")
+
+    ttk.Button(btn_frame, text="OK", command=on_ok).grid(row=0, column=0, padx=(0, 5))
+    ttk.Button(btn_frame, text="Cancel", command=on_cancel).grid(row=0, column=1)
+
+    # ----------------------------------------------------------------------
+    # Center the window on screen and keep it on top this hurt my brain
+    #----------------------------------------------------------------------
+    root.update_idletasks()
+    w = root.winfo_width()
+    h = root.winfo_height()
+    sw = root.winfo_screenwidth()
+    sh = root.winfo_screenheight()
+    x = (sw // 2) - (w // 2)
+    y = (sh // 2) - (h // 2)
+    root.geometry(f"+{x}+{y}")
+    root.attributes("-topmost", True)
+    root.lift()
+
+    root.mainloop()
+
+    return result["mode"], result["user_dt"]
+
+
+def show_completion_popup(dest_dir: str, saved_files: list[str], cycle: datetime):
     root = tk.Tk()
     root.withdraw()
 
+    win = tk.Toplevel(root)
+    win.title("WPC QPF Download")
+    win.resizable(True, True)
+
+    frame = ttk.Frame(win, padding=10)
+    frame.grid(row=0, column=0, sticky="nsew")
+
+    win.grid_rowconfigure(0, weight=1)
+    win.grid_columnconfigure(0, weight=1)
+
     lines = []
-    lines.append("Download completed.")
-    lines.append("")
-    lines.append("Destination folder:")
-    lines.append(dest_dir)
+    lines.append(f"Cycle used: {cycle.strftime('%Y-%m-%d %H:%M')} UTC")
 
     if saved_files:
-        lines.append("")
-        lines.append("Downloaded files:")
-        lines.extend(saved_files)
+        summary_text = f"Download completed. Saved {len(saved_files)} file(s)."
     else:
-        lines.append("")
-        lines.append("No new files were downloaded (they may already exist).")
+        summary_text = "Download completed. No new files were downloaded (they may already exist)."
 
-    msg = "\n".join(lines)
+    ttk.Label(frame, text=summary_text).grid(
+        row=0, column=0, columnspan=2, sticky="w", pady=(0, 5)
+    )
 
-    messagebox.showinfo("WPC QPF Download", msg)
+    # Destination folder line
+    ttk.Label(
+        frame,
+        text=f"Destination folder: {dest_dir}",
+        anchor="w",
+        justify="left",
+        wraplength=600,
+    ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 5))
+
+    ttk.Label(frame, text="Downloaded files:").grid(
+        row=2, column=0, columnspan=2, sticky="w"
+    )
+
+    list_frame = ttk.Frame(frame)
+    list_frame.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(2, 5))
+
+    frame.grid_rowconfigure(3, weight=1)
+    frame.grid_columnconfigure(0, weight=1)
+
+    listbox = tk.Listbox(list_frame, height=10, width=80)
+    scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=listbox.yview)
+    listbox.config(yscrollcommand=scrollbar.set)
+
+    listbox.grid(row=0, column=0, sticky="nsew")
+    scrollbar.grid(row=0, column=1, sticky="ns")
+
+    list_frame.grid_rowconfigure(0, weight=1)
+    list_frame.grid_columnconfigure(0, weight=1)
+
+    if saved_files:
+        for path in saved_files:
+            listbox.insert(tk.END, path)
+    else:
+        listbox.insert(tk.END, "No new files were downloaded (they may already exist).")
+
+    btn = ttk.Button(frame, text="Close", command=win.destroy)
+    btn.grid(row=4, column=0, columnspan=2, pady=(8, 0))
+
+    win.update_idletasks()
+    w = win.winfo_width()
+    h = win.winfo_height()
+    sw = win.winfo_screenwidth()
+    sh = win.winfo_screenheight()
+    x = (sw // 2) - (w // 2)
+    y = (sh // 2) - (h // 2)
+    win.geometry(f"+{x}+{y}")
+    win.attributes("-topmost", True)
+    win.lift()
+
+    win.grab_set()
+    root.wait_window(win)
     root.destroy()
 
 
@@ -200,9 +495,9 @@ def show_completion_popup(dest_dir: str, saved_files: list[str]):
 # This does the thing!!!!
 # --------------------------------------------
 def main():
-    # -------------------------------------------
-    # Ask user where to put the QPF GRIB files
-    # -------------------------------------------
+    # --------------------------------------------
+    # Ask where to save files first
+    # --------------------------------------------
     dest_dir = ask_destination_folder()
     if not dest_dir:
         print("No folder selected, exiting.")
@@ -210,29 +505,52 @@ def main():
 
     Path(dest_dir).mkdir(parents=True, exist_ok=True)
 
-    # --------------------------------------------------------------------------------
-    # Determine the latest complete QPF cycle, this will just pull the most recent QPF
-    # --------------------------------------------------------------------------------
     now_utc = datetime.now(timezone.utc)
-    cycle = get_latest_complete_cycle_utc(now_utc)
-    print(f"Using cycle: {cycle.strftime('%Y-%m-%d %H:%M')} UTC")
+    # --------------------------------------------
+    # Ask how to choose the cycle (latest vs custom date/hour)
+    # --------------------------------------------
+    mode, user_dt_utc = ask_cycle_mode(now_utc)
+    if mode is None:
+        print("User cancelled cycle selection, exiting.")
+        sys.exit(0)
 
-    # ------------------------------------------------------------------
+    # --------------------------------------------------------------
+    # Resolve to an actual complete cycle time under the constraints
+    # ---------------------------------------------------------------
+    try:
+        cycle = get_cycle_from_user_choice(now_utc, mode, user_dt_utc)
+    except ValueError as e:
+        messagebox.showerror("Cycle selection error", str(e))
+        print("Error determining cycle:", e, file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Using cycle: {cycle.strftime('%Y-%m-%d %H:%M')} UTC")
+    # -----------------------------------------------------
     # Show how many files we expect based on our range
-    # -------------------------------------------------------------------
+    # ------------------------------------------------------
     _, _, fnames = build_wpc_qpf_filenames(cycle)
     print(f"Expecting {len(fnames)} files.")
 
-    # --------------------------------------------------
+    # ----------------------------------------------------
+    # Create progress window before starting downloads
+    # ----------------------------------------------------
+    create_progress_window(len(fnames))
+
+    # ----------------------------------------------------
     # Download the GRIB files for this entire forecast
-    # --------------------------------------------------
+    # -----------------------------------------------------
     saved_files = asyncio.run(download_cycle_files(cycle, dest_dir))
     print("Downloads complete.")
 
-    # ----------------------------------------
-    # GUI confirmation of completion with file list
-    # ----------------------------------------
-    show_completion_popup(dest_dir, saved_files)
+    # ----------------------------------------------------
+    # Close progress window
+    # ----------------------------------------------------
+    close_progress_window()
+
+    # -------------------------------------------------------
+    # confirmation dialog of completion with file list
+    # ------------------------------------------------------
+    show_completion_popup(dest_dir, saved_files, cycle)
 
     print("Done with QPF download workflow.")
 
