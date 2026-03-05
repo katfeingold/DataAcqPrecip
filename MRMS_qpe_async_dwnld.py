@@ -1,21 +1,32 @@
 # -*- coding: utf-8 -*-
-"""
-MRMS downloader with Tkinter dialog for date selection.
-"""
+# ----------------------------------------------------------------
+# What it Does: Download MRMS QPE files.
+# Author (so you know who to yell at) Kat Feingold
+# Last updated: 
+# 3/4/2026 - creation
+# 3/4/2026 - fixed the dialog box
+# 3/4/2026 - added simple progress bar per file
+# 
+# -----------------------------------------------------------------
+
 
 import os
 import sys
 from datetime import datetime, timedelta
 
+
 import nest_asyncio
 nest_asyncio.apply()
+
 
 import asyncio
 import aiohttp
 import async_timeout
 
+
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+
 
 
 #-------------------------------------------------------------------------------
@@ -26,6 +37,7 @@ _progress_root = None
 _progress_var = None
 _progress_label = None
 _progress_total = 0
+
 
 
 def create_progress_window(total_files: int):
@@ -78,6 +90,7 @@ def create_progress_window(total_files: int):
     _progress_root.update()
 
 
+
 def update_progress_window():
     """
     Increment the file counter and refresh the progress window.
@@ -93,6 +106,7 @@ def update_progress_window():
     _progress_root.update_idletasks()
 
 
+
 def close_progress_window():
     """
     Close and destroy the progress window if it exists.
@@ -103,23 +117,27 @@ def close_progress_window():
         _progress_root = None
 
 
+
 async def download_coroutine(url, session, destination, saved_files):
     async with async_timeout.timeout(1200):
         async with session.get(url) as response:
             if response.status == 200:
-                fp = destination + os.sep + os.path.basename(url)
-                with open(fp, 'wb') as f_handle:
+                fp = os.path.join(destination, os.path.basename(url))
+                tmp_fp = fp + ".part"
+                with open(tmp_fp, 'wb') as f_handle:
                     while True:
                         chunk = await response.content.read(1024)
                         if not chunk:
                             break
                         f_handle.write(chunk)
+                os.replace(tmp_fp, fp)  # overwrite if exists
                 saved_files.append(fp)
                 # Update progress bar for each completed file
                 update_progress_window()
             else:
                 print("FAILED:", url)
             return await response.release()
+
 
 
 async def main_async(url_list, destination):
@@ -131,6 +149,7 @@ async def main_async(url_list, destination):
         ]
         await asyncio.gather(*tasks)
     return saved_files
+
 
 
 #-------------------------------------------------------------------------------------------
@@ -145,12 +164,10 @@ def ask_date_range():
     root.title("Select MRMS Date Range")
     root.resizable(False, False)
 
-    
     root.geometry("+200+200")
 
     mode_var = tk.StringVar(value="custom")  # "custom" or "lookback"
 
-    
     frm = ttk.Frame(root, padding=10)
     frm.grid(row=0, column=0, sticky="nsew")
 
@@ -169,7 +186,6 @@ def ask_date_range():
     )
     rb_lookback.grid(row=3, column=0, columnspan=2, sticky="w", pady=(10, 5))
 
-   
     ttk.Label(frm, text="Start:").grid(row=1, column=0, sticky="e")
     start_entry = ttk.Entry(frm, width=25)
     start_entry.grid(row=1, column=1, sticky="w")
@@ -178,14 +194,12 @@ def ask_date_range():
     end_entry = ttk.Entry(frm, width=25)
     end_entry.grid(row=2, column=1, sticky="w")
 
-    
     today = datetime.now().date()
     yesterday = today - timedelta(days=1)
 
     start_entry.insert(0, yesterday.strftime("%d-%b-%Y 00:00"))
     end_entry.insert(0, today.strftime("%d-%b-%Y 00:00"))
 
-    
     ttk.Label(frm, text="Days to look back:").grid(row=4, column=0, sticky="e")
     lookback_entry = ttk.Entry(frm, width=10)
     lookback_entry.grid(row=4, column=1, sticky="w")
@@ -202,12 +216,11 @@ def ask_date_range():
                 start_dt = datetime.strptime(start_str, fmt)
                 end_dt = datetime.strptime(end_str, fmt)
             else:
-                
                 days_str = lookback_entry.get().strip()
                 days = int(days_str)
                 end_dt = datetime.now()
                 start_dt = end_dt - timedelta(days=days)
-                
+
                 start_dt = start_dt.replace(minute=0, second=0, microsecond=0)
                 end_dt = end_dt.replace(minute=0, second=0, microsecond=0)
 
@@ -248,6 +261,7 @@ def ask_date_range():
     return result["start"], result["end"]
 
 
+
 def ask_destination_folder() -> str | None:
     """
     Popup to choose destination folder for MRMS files.
@@ -263,25 +277,85 @@ def ask_destination_folder() -> str | None:
     return folder
 
 
-def show_completion_popup(saved_files):
+
+def show_completion_popup(saved_files, destination: str):
     """
     Popup summarizing what was saved and where.
+
+    Uses a scrollable list so the window doesn't fill the whole screen.
     """
     root = tk.Tk()
     root.withdraw()
 
-    lines = []
-    if saved_files:
-        lines.append("Download completed.")
-        lines.append("")
-        lines.append("Saved files:")
-        lines.extend(saved_files)
-    else:
-        lines.append("Download completed, but no new files were saved.")
+    win = tk.Toplevel(root)
+    win.title("MRMS Download")
+    win.resizable(True, True)
 
-    msg = "\n".join(lines)
-    messagebox.showinfo("MRMS Download", msg)
+    frame = ttk.Frame(win, padding=10)
+    frame.grid(row=0, column=0, sticky="nsew")
+
+    win.grid_rowconfigure(0, weight=1)
+    win.grid_columnconfigure(0, weight=1)
+
+    if saved_files:
+        summary_text = f"Download completed. Saved {len(saved_files)} file(s)."
+    else:
+        summary_text = "Download completed, but no new files were saved."
+
+    ttk.Label(frame, text=summary_text).grid(
+        row=0, column=0, columnspan=2, sticky="w", pady=(0, 5)
+    )
+
+    # Destination folder line
+    ttk.Label(
+        frame,
+        text=f"Destination folder: {destination}",
+        anchor="w",
+        justify="left",
+        wraplength=600,
+    ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 5))
+
+    ttk.Label(frame, text="Saved files:").grid(
+        row=2, column=0, columnspan=2, sticky="w"
+    )
+
+    list_frame = ttk.Frame(frame)
+    list_frame.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(2, 5))
+
+    frame.grid_rowconfigure(3, weight=1)
+    frame.grid_columnconfigure(0, weight=1)
+
+    listbox = tk.Listbox(list_frame, height=10, width=80)
+    scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=listbox.yview)
+    listbox.config(yscrollcommand=scrollbar.set)
+
+    listbox.grid(row=0, column=0, sticky="nsew")
+    scrollbar.grid(row=0, column=1, sticky="ns")
+
+    list_frame.grid_rowconfigure(0, weight=1)
+    list_frame.grid_columnconfigure(0, weight=1)
+
+    for path in saved_files:
+        listbox.insert(tk.END, path)
+
+    btn = ttk.Button(frame, text="Close", command=win.destroy)
+    btn.grid(row=4, column=0, columnspan=2, pady=(8, 0))
+
+    win.update_idletasks()
+    w = win.winfo_width()
+    h = win.winfo_height()
+    sw = win.winfo_screenwidth()
+    sh = win.winfo_screenheight()
+    x = (sw // 2) - (w // 2)
+    y = (sh // 2) - (h // 2)
+    win.geometry(f"+{x}+{y}")
+    win.attributes("-topmost", True)
+    win.lift()
+
+    win.grab_set()
+    root.wait_window(win)
     root.destroy()
+
 
 
 #-------------------------------------------------------------------------------
@@ -325,14 +399,12 @@ if __name__ == "__main__":
             f"{date.year:04d}{date.month:02d}{date.day:02d}-"
             f"{date.hour:02d}0000.grib2.gz"
         )
-        fn = os.path.basename(url)
-        if not os.path.isfile(os.path.join(dest, fn)):
-            urls.append(url)
+        urls.append(url)
         date += hour
 
     if not urls:
-        print("No new files to download in the selected range.")
-        show_completion_popup([])
+        print("No files to download in the selected range.")
+        show_completion_popup([], dest)
         sys.exit(0)
 
     # -----------------------------------------------------------
@@ -357,4 +429,4 @@ if __name__ == "__main__":
     # -----------------------
     # Final summary popup
     # -------------------------
-    show_completion_popup(all_saved)
+    show_completion_popup(all_saved, dest)

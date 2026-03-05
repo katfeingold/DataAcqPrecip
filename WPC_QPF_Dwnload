@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 # ----------------------------------------------------------------
-# What it Does: Download WPC 2.5km QPF forecast cycle GRIB files.
+# What it Does: Download WPC 2.5km QPF forecast files.
 # Author (so you know who to yell at) Kat Feingold
 # Last updated: 
 # 3/4/2026 - creation
 # 3/4/2026 - fixed the dialog box
 # 3/4/2026 - added simple progress bar per file
-# 3/4/2026 - limited concurrency + longer timeouts
+# 
 # -----------------------------------------------------------------
 
 import os
