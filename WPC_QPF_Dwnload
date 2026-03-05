@@ -220,12 +220,9 @@ async def download_file(session, sem, url, dest_dir, saved_files):
     local_path = os.path.join(dest_dir, local_name)
 
     async with sem:
-        if os.path.exists(local_path):
-            print(f"Exists, skipping: {local_name}")
-            # Still count it as "done" in progress, since nothing to download
-            update_progress_window()
-            return
-
+        # ------------------------------------------------------------
+        # Always (re)download the file and overwrite if it exists
+        # ------------------------------------------------------------
         try:
             # Give each request a generous timeout window
             async with async_timeout.timeout(1200):
@@ -242,6 +239,7 @@ async def download_file(session, sem, url, dest_dir, saved_files):
                             if not chunk:
                                 break
                             f.write(chunk)
+                    # os.replace will overwrite existing file if present
                     os.replace(tmp_path, local_path)
                     print(f"Downloaded: {local_name}")
                     saved_files.append(local_path)
@@ -249,6 +247,7 @@ async def download_file(session, sem, url, dest_dir, saved_files):
         except Exception as e:
             print(f"Error downloading {url}: {e}")
             update_progress_window()
+
 
 
 # --------------------------------------------
@@ -416,25 +415,79 @@ def show_completion_popup(dest_dir: str, saved_files: list[str], cycle: datetime
     root = tk.Tk()
     root.withdraw()
 
+    win = tk.Toplevel(root)
+    win.title("WPC QPF Download")
+    win.resizable(True, True)
+
+    frame = ttk.Frame(win, padding=10)
+    frame.grid(row=0, column=0, sticky="nsew")
+
+    win.grid_rowconfigure(0, weight=1)
+    win.grid_columnconfigure(0, weight=1)
+
     lines = []
-    lines.append("Download completed.")
-    lines.append("")
     lines.append(f"Cycle used: {cycle.strftime('%Y-%m-%d %H:%M')} UTC")
-    lines.append("")
-    lines.append("Destination folder:")
-    lines.append(dest_dir)
 
     if saved_files:
-        lines.append("")
-        lines.append("Downloaded files:")
-        lines.extend(saved_files)
+        summary_text = f"Download completed. Saved {len(saved_files)} file(s)."
     else:
-        lines.append("")
-        lines.append("No new files were downloaded (they may already exist).")
+        summary_text = "Download completed. No new files were downloaded (they may already exist)."
 
-    msg = "\n".join(lines)
+    ttk.Label(frame, text=summary_text).grid(
+        row=0, column=0, columnspan=2, sticky="w", pady=(0, 5)
+    )
 
-    messagebox.showinfo("WPC QPF Download", msg)
+    # Destination folder line
+    ttk.Label(
+        frame,
+        text=f"Destination folder: {dest_dir}",
+        anchor="w",
+        justify="left",
+        wraplength=600,
+    ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 5))
+
+    ttk.Label(frame, text="Downloaded files:").grid(
+        row=2, column=0, columnspan=2, sticky="w"
+    )
+
+    list_frame = ttk.Frame(frame)
+    list_frame.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(2, 5))
+
+    frame.grid_rowconfigure(3, weight=1)
+    frame.grid_columnconfigure(0, weight=1)
+
+    listbox = tk.Listbox(list_frame, height=10, width=80)
+    scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=listbox.yview)
+    listbox.config(yscrollcommand=scrollbar.set)
+
+    listbox.grid(row=0, column=0, sticky="nsew")
+    scrollbar.grid(row=0, column=1, sticky="ns")
+
+    list_frame.grid_rowconfigure(0, weight=1)
+    list_frame.grid_columnconfigure(0, weight=1)
+
+    if saved_files:
+        for path in saved_files:
+            listbox.insert(tk.END, path)
+    else:
+        listbox.insert(tk.END, "No new files were downloaded (they may already exist).")
+
+    btn = ttk.Button(frame, text="Close", command=win.destroy)
+    btn.grid(row=4, column=0, columnspan=2, pady=(8, 0))
+
+    win.update_idletasks()
+    w = win.winfo_width()
+    h = win.winfo_height()
+    sw = win.winfo_screenwidth()
+    sh = win.winfo_screenheight()
+    x = (sw // 2) - (w // 2)
+    y = (sh // 2) - (h // 2)
+    win.geometry(f"+{x}+{y}")
+    win.attributes("-topmost", True)
+    win.lift()
+
+    win.grab_set()
+    root.wait_window(win)
     root.destroy()
 
 
